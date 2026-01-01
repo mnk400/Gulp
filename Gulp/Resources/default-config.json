@@ -1,0 +1,12 @@
+{
+    "extractor": {
+        "base-directory": "~/Downloads/Gallery-DL"
+    },
+    "output": {
+        "mode": "auto"
+    },
+    "downloader": {
+        "rate": "1M",
+        "retries": 3
+    }
+}
