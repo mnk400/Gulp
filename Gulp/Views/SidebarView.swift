@@ -24,6 +24,7 @@ struct SidebarView: View {
                     Label("Download", systemImage: "arrow.down.circle.fill")
                         .tag(NavigationItem.download)
                 }
+                .listRowInsets(EdgeInsets(top: 0, leading: 0, bottom: 0, trailing: 0))
 
                 // History section
                 Section("History") {
@@ -97,23 +98,22 @@ struct RunRow: View {
     let run: DownloadRun
     let isActive: Bool
 
+    private var displayText: String {
+        if run.fileCount > 0 {
+            return "\(run.displayName) - \(run.fileCount) files"
+        }
+        return run.displayName
+    }
+
     var body: some View {
         HStack(spacing: 8) {
             Circle()
                 .fill(statusColor)
                 .frame(width: 8, height: 8)
 
-            VStack(alignment: .leading, spacing: 2) {
-                Text(run.displayName)
-                    .font(.callout)
-                    .lineLimit(1)
-
-                if run.fileCount > 0 {
-                    Text("\(run.fileCount) files")
-                        .font(.caption2)
-                        .foregroundStyle(.secondary)
-                }
-            }
+            Text(displayText)
+                .font(.callout)
+                .lineLimit(1)
 
             Spacer()
 

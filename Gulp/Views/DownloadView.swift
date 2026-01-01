@@ -71,8 +71,8 @@ struct DownloadView: View {
                         .textFieldStyle(.plain)
                         .padding(.horizontal, 12)
                         .padding(.vertical, 10)
-                        .background(.background.secondary)
-                        .clipShape(RoundedRectangle(cornerRadius: 8))
+                        .background(.background.tertiary)
+                        .clipShape(RoundedRectangle(cornerRadius: 40))
                         .onSubmit {
                             startDownload()
                         }
