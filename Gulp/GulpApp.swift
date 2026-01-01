@@ -9,6 +9,7 @@ import UserNotifications
 @main
 struct GulpApp: App {
     @State private var appState = AppState()
+    @State private var historyManager = HistoryManager()
 
     init() {
         // Ensure config exists on launch
@@ -20,12 +21,12 @@ struct GulpApp: App {
 
     var body: some Scene {
         WindowGroup {
-            ContentView()
+            MainView()
                 .environment(appState)
+                .environment(historyManager)
         }
-        .windowStyle(.hiddenTitleBar)
-        .windowResizability(.contentSize)
-        .defaultSize(width: 380, height: 200)
+        .windowResizability(.contentMinSize)
+        .defaultSize(width: 800, height: 500)
         .commands {
             CommandGroup(replacing: .newItem) { }
         }

@@ -27,6 +27,7 @@ enum GalleryDLError: LocalizedError {
 class GalleryDLRunner {
     private var currentProcess: Process?
     private var outputPipe: Pipe?
+    private var currentRun: DownloadRun?
 
     static let possiblePaths = [
         "/opt/homebrew/bin/gallery-dl",
@@ -43,7 +44,7 @@ class GalleryDLRunner {
         return nil
     }
 
-    func run(url: String, outputDir: URL, state: AppState) async throws {
+    func run(url: String, outputDir: URL, state: AppState, historyManager: HistoryManager) async throws {
         guard let executablePath = Self.findExecutable() else {
             throw GalleryDLError.notInstalled
         }
@@ -55,8 +56,15 @@ class GalleryDLRunner {
             try FileManager.default.createDirectory(at: outputDir, withIntermediateDirectories: true)
         }
 
+        // Create a new run entry
+        var run = DownloadRun(url: url, outputDirectory: outputDir.path)
+        run.addLog("Starting download...", type: .info)
+        historyManager.addRun(run)
+        currentRun = run
+
         state.resetDownloadState()
         state.isDownloading = true
+        state.currentRunId = run.id
 
         let process = Process()
         process.executableURL = URL(fileURLWithPath: executablePath)
@@ -92,7 +100,7 @@ class GalleryDLRunner {
         // Read output in background
         Task.detached { [weak self] in
             for try await line in handle.bytes.lines {
-                await self?.parseOutput(line: line, state: state)
+                await self?.parseOutput(line: line, state: state, historyManager: historyManager)
             }
         }
 
@@ -103,17 +111,40 @@ class GalleryDLRunner {
                     self?.outputPipe = nil
                     state.isDownloading = false
 
-                    if proc.terminationStatus == 0 {
-                        if state.showNotifications {
-                            self?.sendCompletionNotification(count: state.downloadedCount)
+                    // Update run status
+                    if var run = self?.currentRun {
+                        run.fileCount = state.downloadedCount
+
+                        if proc.terminationStatus == 0 {
+                            run.status = .completed
+                            run.addLog("Download completed: \(state.downloadedCount) files", type: .info)
+                            historyManager.updateRun(run)
+
+                            if state.showNotifications {
+                                self?.sendCompletionNotification(count: state.downloadedCount)
+                            }
+                            continuation.resume()
+                        } else if proc.terminationStatus == 15 || proc.terminationStatus == 9 {
+                            run.status = .cancelled
+                            run.addLog("Download cancelled by user", type: .warning)
+                            historyManager.updateRun(run)
+                            continuation.resume(throwing: GalleryDLError.cancelled)
+                        } else {
+                            run.status = .failed
+                            let error = state.errorMessage ?? "Download failed with exit code \(proc.terminationStatus)"
+                            run.addLog(error, type: .error)
+                            historyManager.updateRun(run)
+                            continuation.resume(throwing: GalleryDLError.processError(error))
                         }
-                        continuation.resume()
-                    } else if proc.terminationStatus == 15 || proc.terminationStatus == 9 {
-                        // SIGTERM or SIGKILL - user cancelled
-                        continuation.resume(throwing: GalleryDLError.cancelled)
+
+                        self?.currentRun = nil
+                        state.currentRunId = nil
                     } else {
-                        let error = state.errorMessage ?? "Download failed with exit code \(proc.terminationStatus)"
-                        continuation.resume(throwing: GalleryDLError.processError(error))
+                        if proc.terminationStatus == 0 {
+                            continuation.resume()
+                        } else {
+                            continuation.resume(throwing: GalleryDLError.processError("Unknown error"))
+                        }
                     }
                 }
             }
@@ -122,6 +153,11 @@ class GalleryDLRunner {
                 try process.run()
             } catch {
                 state.isDownloading = false
+                if var run = self.currentRun {
+                    run.status = .failed
+                    run.addLog("Failed to start: \(error.localizedDescription)", type: .error)
+                    historyManager.updateRun(run)
+                }
                 continuation.resume(throwing: error)
             }
         }
@@ -131,35 +167,46 @@ class GalleryDLRunner {
         currentProcess?.terminate()
     }
 
-    private func parseOutput(line: String, state: AppState) async {
+    private func parseOutput(line: String, state: AppState, historyManager: HistoryManager) async {
         await MainActor.run {
-            // gallery-dl outputs filenames being downloaded
-            // Format varies but typically includes the filename
+            let trimmedLine = line.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !trimmedLine.isEmpty else { return }
+
+            // Add to current run's logs
+            if var run = currentRun {
+                let logType: LogType = {
+                    if trimmedLine.lowercased().contains("error") { return .error }
+                    if trimmedLine.lowercased().contains("warning") { return .warning }
+                    if trimmedLine.contains("/") { return .download }
+                    return .info
+                }()
+                run.addLog(trimmedLine, type: logType)
+                currentRun = run
+                historyManager.updateRun(run)
+            }
 
             // Check for error messages
-            if line.lowercased().contains("error") || line.lowercased().contains("failed") {
-                state.errorMessage = line
+            if trimmedLine.lowercased().contains("error") || trimmedLine.lowercased().contains("failed") {
+                state.errorMessage = trimmedLine
                 return
             }
 
             // Try to extract filename from output
-            // gallery-dl typically outputs the full path of downloaded files
-            if line.contains("/") && !line.hasPrefix("#") {
-                let components = line.components(separatedBy: "/")
+            if trimmedLine.contains("/") && !trimmedLine.hasPrefix("#") {
+                let components = trimmedLine.components(separatedBy: "/")
                 if let filename = components.last, !filename.isEmpty {
                     state.currentFile = filename.trimmingCharacters(in: .whitespacesAndNewlines)
                     state.downloadedCount += 1
 
-                    // Update progress if we have a total
                     if state.totalCount > 0 {
                         state.progress = Double(state.downloadedCount) / Double(state.totalCount)
                     }
                 }
             }
 
-            // Try to parse count patterns like "[1/10]" or "1 of 10"
-            if let match = line.range(of: #"\[(\d+)/(\d+)\]"#, options: .regularExpression) {
-                let matchStr = String(line[match])
+            // Try to parse count patterns like "[1/10]"
+            if let match = trimmedLine.range(of: #"\[(\d+)/(\d+)\]"#, options: .regularExpression) {
+                let matchStr = String(trimmedLine[match])
                 let numbers = matchStr.filter { $0.isNumber || $0 == "/" }
                 let parts = numbers.split(separator: "/")
                 if parts.count == 2,

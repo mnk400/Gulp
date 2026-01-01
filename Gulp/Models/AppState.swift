@@ -31,6 +31,11 @@ class AppState {
     var totalCount: Int = 0
     var progress: Double = 0.0
     var errorMessage: String?
+    var currentRunId: UUID?
+
+    // Completed state (persists across view switches)
+    var showCompleted: Bool = false
+    var completedRunId: UUID?
 
     // Settings - computed properties that read from UserDefaults to stay in sync with @AppStorage
     var skipExisting: Bool {

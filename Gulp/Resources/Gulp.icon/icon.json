@@ -1,8 +1,8 @@
 {
   "fill" : {
     "linear-gradient" : [
-      "display-p3:0.24899,0.55525,0.75786,1.00000",
-      "display-p3:0.09830,0.37032,0.78621,1.00000"
+      "display-p3:0.39080,0.61995,0.83483,1.00000",
+      "display-p3:0.07675,0.19644,0.91911,1.00000"
     ],
     "orientation" : {
       "start" : {
@@ -19,27 +19,57 @@
     {
       "layers" : [
         {
-          "fill" : {
-            "solid" : "display-p3:0.98001,0.99370,1.00000,1.00000"
-          },
-          "image-name" : "water-glass-2.png",
-          "name" : "water-glass-2",
+          "blend-mode-specializations" : [
+            {
+              "appearance" : "tinted",
+              "value" : "normal"
+            }
+          ],
+          "fill-specializations" : [
+            {
+              "appearance" : "tinted",
+              "value" : "none"
+            }
+          ],
+          "glass" : true,
+          "hidden" : false,
+          "image-name" : "sea.png",
+          "name" : "sea",
+          "opacity-specializations" : [
+            {
+              "appearance" : "dark",
+              "value" : 0.5
+            },
+            {
+              "appearance" : "tinted",
+              "value" : 0.86
+            }
+          ],
           "position" : {
-            "scale" : 1.49,
+            "scale" : 2.08,
             "translation-in-points" : [
               0,
-              0
+              93.91999999999985
             ]
           }
         },
         {
+          "blend-mode" : "normal",
           "fill" : {
-            "solid" : "display-p3:0.96783,0.96754,0.94945,0.04525"
+            "solid" : "display-p3:1.00000,0.99569,0.98275,0.09078"
           },
+          "glass" : false,
+          "hidden" : true,
           "image-name" : "Image 2.png",
           "name" : "Image 2",
+          "opacity-specializations" : [
+            {
+              "appearance" : "tinted",
+              "value" : 0
+            }
+          ],
           "position" : {
-            "scale" : 1.61,
+            "scale" : 2.45,
             "translation-in-points" : [
               0,
               0
