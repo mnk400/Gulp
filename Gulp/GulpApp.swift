@@ -23,6 +23,7 @@ struct GulpApp: App {
             ContentView()
                 .environment(appState)
         }
+        .windowStyle(.hiddenTitleBar)
         .windowResizability(.contentSize)
         .defaultSize(width: 380, height: 200)
         .commands {
