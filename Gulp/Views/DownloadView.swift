@@ -7,7 +7,8 @@ import SwiftUI
 import AppKit
 
 struct DownloadView: View {
-    @Environment(AppState.self) private var state
+    @Environment(UIState.self) private var uiState
+    @Environment(UserSettings.self) private var settings
     @Environment(HistoryManager.self) private var historyManager
     @Binding var selection: NavigationItem?
     @State private var runner = GalleryDLRunner()
@@ -15,34 +16,34 @@ struct DownloadView: View {
     @State private var errorMessage = ""
 
     private var buttonTint: Color? {
-        if state.showCompleted {
+        if uiState.showCompleted {
             return .green
-        } else if state.isDownloading {
+        } else if uiState.isDownloading {
             return .red
         }
         return nil
     }
 
     private var buttonIcon: String {
-        if state.showCompleted {
+        if uiState.showCompleted {
             return "checkmark"
-        } else if state.isDownloading {
+        } else if uiState.isDownloading {
             return "xmark"
         }
         return "arrow.down"
     }
 
     private var buttonText: String {
-        if state.showCompleted {
+        if uiState.showCompleted {
             return "Completed!"
-        } else if state.isDownloading {
+        } else if uiState.isDownloading {
             return "Cancel"
         }
         return "Download"
     }
 
     private var completedRun: DownloadRun? {
-        guard let id = state.completedRunId else { return nil }
+        guard let id = uiState.completedRunId else { return nil }
         return historyManager.runs.first { $0.id == id }
     }
 
@@ -54,7 +55,7 @@ struct DownloadView: View {
     }
 
     var body: some View {
-        @Bindable var state = state
+        @Bindable var uiState = uiState
 
         VStack(spacing: 20) {
             // Header
@@ -66,7 +67,7 @@ struct DownloadView: View {
             // URL Input Section
             VStack(alignment: .leading, spacing: 8) {
                 HStack(spacing: 12) {
-                    TextField("Paste gallery or image URL...", text: $state.url)
+                    TextField("Paste gallery or image URL...", text: $uiState.url)
                         .textFieldStyle(.plain)
                         .padding(.horizontal, 12)
                         .padding(.vertical, 10)
@@ -75,11 +76,11 @@ struct DownloadView: View {
                         .onSubmit {
                             startDownload()
                         }
-                        .onChange(of: state.url) { _, newValue in
+                        .onChange(of: uiState.url) { _, newValue in
                             // Clear completed state when user starts typing
-                            if !newValue.isEmpty && state.showCompleted {
-                                state.showCompleted = false
-                                state.completedRunId = nil
+                            if !newValue.isEmpty && uiState.showCompleted {
+                                uiState.showCompleted = false
+                                uiState.completedRunId = nil
                             }
                         }
 
@@ -99,9 +100,9 @@ struct DownloadView: View {
 
             // Download Button
             Button {
-                if state.isDownloading {
+                if uiState.isDownloading {
                     runner.cancel()
-                } else if !state.showCompleted {
+                } else if !uiState.showCompleted {
                     startDownload()
                 }
             } label: {
@@ -116,10 +117,10 @@ struct DownloadView: View {
             .buttonBorderShape(.capsule)
             .tint(buttonTint)
             .controlSize(.large)
-            .disabled(state.url.isEmpty && !state.isDownloading && !state.showCompleted)
+            .disabled(uiState.url.isEmpty && !uiState.isDownloading && !uiState.showCompleted)
 
             // Progress Section
-            if state.isDownloading {
+            if uiState.isDownloading {
                 VStack(spacing: 8) {
                     HStack {
                         Text("Downloading...")
@@ -128,22 +129,22 @@ struct DownloadView: View {
 
                         Spacer()
 
-                        if state.totalCount > 0 {
-                            Text("\(state.downloadedCount) of \(state.totalCount)")
+                        if uiState.totalCount > 0 {
+                            Text("\(uiState.downloadedCount) of \(uiState.totalCount)")
                                 .font(.caption)
                                 .foregroundStyle(.secondary)
-                        } else if state.downloadedCount > 0 {
-                            Text("\(state.downloadedCount) files")
+                        } else if uiState.downloadedCount > 0 {
+                            Text("\(uiState.downloadedCount) files")
                                 .font(.caption)
                                 .foregroundStyle(.secondary)
                         }
                     }
 
-                    ProgressView(value: state.totalCount > 0 ? state.progress : nil)
+                    ProgressView(value: uiState.totalCount > 0 ? uiState.progress : nil)
                         .progressViewStyle(.linear)
 
-                    if !state.currentFile.isEmpty {
-                        Text(state.currentFile)
+                    if !uiState.currentFile.isEmpty {
+                        Text(uiState.currentFile)
                             .font(.caption2)
                             .foregroundStyle(.tertiary)
                             .lineLimit(1)
@@ -154,7 +155,7 @@ struct DownloadView: View {
             }
 
             // Completed Files Section
-            if state.showCompleted && !downloadedFiles.isEmpty {
+            if uiState.showCompleted && !downloadedFiles.isEmpty {
                 VStack(alignment: .leading, spacing: 8) {
                     HStack {
                         Text("Downloaded \(downloadedFiles.count) files")
@@ -164,7 +165,7 @@ struct DownloadView: View {
 
                         Spacer()
 
-                        if let runId = state.completedRunId {
+                        if let runId = uiState.completedRunId {
                             Button {
                                 selection = .run(runId)
                             } label: {
@@ -215,24 +216,24 @@ struct DownloadView: View {
 
     private func pasteFromClipboard() {
         if let string = NSPasteboard.general.string(forType: .string) {
-            state.url = string.trimmingCharacters(in: .whitespacesAndNewlines)
+            uiState.url = string.trimmingCharacters(in: .whitespacesAndNewlines)
         }
     }
 
     private func startDownload() {
-        guard !state.url.isEmpty else { return }
+        guard !uiState.url.isEmpty else { return }
 
         // Clear any previous completed state
-        state.showCompleted = false
-        state.completedRunId = nil
+        uiState.showCompleted = false
+        uiState.completedRunId = nil
 
         Task {
             do {
-                try await runner.run(url: state.url, outputDir: state.outputDirectory, state: state, historyManager: historyManager)
+                try await runner.run(url: uiState.url, outputDir: settings.outputDirectory, uiState: uiState, settings: settings, historyManager: historyManager)
                 // Show completed state and store the run ID
-                state.completedRunId = historyManager.runs.first?.id
-                state.showCompleted = true
-                state.url = ""
+                uiState.completedRunId = historyManager.runs.first?.id
+                uiState.showCompleted = true
+                uiState.url = ""
             } catch GalleryDLError.cancelled {
                 // User cancelled, no error needed
             } catch {
@@ -245,6 +246,7 @@ struct DownloadView: View {
 
 #Preview {
     DownloadView(selection: .constant(.download))
-        .environment(AppState())
+        .environment(UIState())
+        .environment(UserSettings())
         .environment(HistoryManager())
 }

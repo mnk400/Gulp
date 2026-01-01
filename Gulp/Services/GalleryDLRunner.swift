@@ -6,6 +6,8 @@
 import Foundation
 import UserNotifications
 
+// MARK: - Error Types
+
 enum GalleryDLError: LocalizedError {
     case notInstalled
     case processError(String)
@@ -23,8 +25,19 @@ enum GalleryDLError: LocalizedError {
     }
 }
 
+// MARK: - Protocol
+
 @MainActor
-class GalleryDLRunner {
+protocol DownloadRunning {
+    static func findExecutable() -> String?
+    func run(url: String, outputDir: URL, uiState: UIState, settings: UserSettings, historyManager: HistoryManaging) async throws
+    func cancel()
+}
+
+// MARK: - Implementation
+
+@MainActor
+class GalleryDLRunner: DownloadRunning {
     private var currentProcess: Process?
     private var outputPipe: Pipe?
     private var currentRun: DownloadRun?
@@ -44,7 +57,7 @@ class GalleryDLRunner {
         return nil
     }
 
-    func run(url: String, outputDir: URL, state: AppState, historyManager: HistoryManager) async throws {
+    func run(url: String, outputDir: URL, uiState: UIState, settings: UserSettings, historyManager: HistoryManaging) async throws {
         guard let executablePath = Self.findExecutable() else {
             throw GalleryDLError.notInstalled
         }
@@ -62,9 +75,9 @@ class GalleryDLRunner {
         historyManager.addRun(run)
         currentRun = run
 
-        state.resetDownloadState()
-        state.isDownloading = true
-        state.currentRunId = run.id
+        uiState.resetDownloadState()
+        uiState.isDownloading = true
+        uiState.currentRunId = run.id
 
         let process = Process()
         process.executableURL = URL(fileURLWithPath: executablePath)
@@ -75,12 +88,12 @@ class GalleryDLRunner {
         ]
 
         // Add options based on settings
-        if state.skipExisting {
+        if settings.skipExisting {
             arguments.append("--no-skip")
             arguments.append(contentsOf: ["--download-archive", outputDir.appendingPathComponent(".gallery-dl-archive").path])
         }
 
-        if state.saveMetadata {
+        if settings.saveMetadata {
             arguments.append("--write-metadata")
         }
 
@@ -100,7 +113,7 @@ class GalleryDLRunner {
         // Read output in background
         Task.detached { [weak self] in
             for try await line in handle.bytes.lines {
-                await self?.parseOutput(line: line, state: state, historyManager: historyManager)
+                await self?.parseOutput(line: line, uiState: uiState, historyManager: historyManager)
             }
         }
 
@@ -109,19 +122,19 @@ class GalleryDLRunner {
                 Task { @MainActor in
                     self?.currentProcess = nil
                     self?.outputPipe = nil
-                    state.isDownloading = false
+                    uiState.isDownloading = false
 
                     // Update run status
                     if var run = self?.currentRun {
-                        run.fileCount = state.downloadedCount
+                        run.fileCount = uiState.downloadedCount
 
                         if proc.terminationStatus == 0 {
                             run.status = .completed
-                            run.addLog("Download completed: \(state.downloadedCount) files", type: .info)
+                            run.addLog("Download completed: \(uiState.downloadedCount) files", type: .info)
                             historyManager.updateRun(run)
 
-                            if state.showNotifications {
-                                self?.sendCompletionNotification(count: state.downloadedCount)
+                            if settings.showNotifications {
+                                self?.sendCompletionNotification(count: uiState.downloadedCount)
                             }
                             continuation.resume()
                         } else if proc.terminationStatus == 15 || proc.terminationStatus == 9 {
@@ -131,14 +144,14 @@ class GalleryDLRunner {
                             continuation.resume(throwing: GalleryDLError.cancelled)
                         } else {
                             run.status = .failed
-                            let error = state.errorMessage ?? "Download failed with exit code \(proc.terminationStatus)"
+                            let error = uiState.errorMessage ?? "Download failed with exit code \(proc.terminationStatus)"
                             run.addLog(error, type: .error)
                             historyManager.updateRun(run)
                             continuation.resume(throwing: GalleryDLError.processError(error))
                         }
 
                         self?.currentRun = nil
-                        state.currentRunId = nil
+                        uiState.currentRunId = nil
                     } else {
                         if proc.terminationStatus == 0 {
                             continuation.resume()
@@ -152,7 +165,7 @@ class GalleryDLRunner {
             do {
                 try process.run()
             } catch {
-                state.isDownloading = false
+                uiState.isDownloading = false
                 if var run = self.currentRun {
                     run.status = .failed
                     run.addLog("Failed to start: \(error.localizedDescription)", type: .error)
@@ -167,7 +180,7 @@ class GalleryDLRunner {
         currentProcess?.terminate()
     }
 
-    private func parseOutput(line: String, state: AppState, historyManager: HistoryManager) async {
+    private func parseOutput(line: String, uiState: UIState, historyManager: HistoryManaging) async {
         await MainActor.run {
             let trimmedLine = line.trimmingCharacters(in: .whitespacesAndNewlines)
             guard !trimmedLine.isEmpty else { return }
@@ -187,7 +200,7 @@ class GalleryDLRunner {
 
             // Check for error messages
             if trimmedLine.lowercased().contains("error") || trimmedLine.lowercased().contains("failed") {
-                state.errorMessage = trimmedLine
+                uiState.errorMessage = trimmedLine
                 return
             }
 
@@ -195,11 +208,11 @@ class GalleryDLRunner {
             if trimmedLine.contains("/") && !trimmedLine.hasPrefix("#") {
                 let components = trimmedLine.components(separatedBy: "/")
                 if let filename = components.last, !filename.isEmpty {
-                    state.currentFile = filename.trimmingCharacters(in: .whitespacesAndNewlines)
-                    state.downloadedCount += 1
+                    uiState.currentFile = filename.trimmingCharacters(in: .whitespacesAndNewlines)
+                    uiState.downloadedCount += 1
 
-                    if state.totalCount > 0 {
-                        state.progress = Double(state.downloadedCount) / Double(state.totalCount)
+                    if uiState.totalCount > 0 {
+                        uiState.progress = Double(uiState.downloadedCount) / Double(uiState.totalCount)
                     }
                 }
             }
@@ -212,9 +225,9 @@ class GalleryDLRunner {
                 if parts.count == 2,
                    let current = Int(parts[0]),
                    let total = Int(parts[1]) {
-                    state.downloadedCount = current
-                    state.totalCount = total
-                    state.progress = Double(current) / Double(total)
+                    uiState.downloadedCount = current
+                    uiState.totalCount = total
+                    uiState.progress = Double(current) / Double(total)
                 }
             }
         }

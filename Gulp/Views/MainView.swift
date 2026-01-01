@@ -6,7 +6,7 @@
 import SwiftUI
 
 struct MainView: View {
-    @Environment(AppState.self) private var state
+    @Environment(UIState.self) private var uiState
     @Environment(HistoryManager.self) private var historyManager
     @State private var selection: NavigationItem? = .download
 
@@ -37,6 +37,7 @@ struct MainView: View {
 
 #Preview {
     MainView()
-        .environment(AppState())
+        .environment(UIState())
+        .environment(UserSettings())
         .environment(HistoryManager())
 }

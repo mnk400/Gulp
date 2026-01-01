@@ -5,8 +5,35 @@
 
 import Foundation
 
+// MARK: - Protocol
+
+protocol HistoryManaging {
+    var runs: [DownloadRun] { get }
+    var groupedByDate: [(String, [DownloadRun])] { get }
+    func addRun(_ run: DownloadRun)
+    func updateRun(_ run: DownloadRun)
+    func deleteRun(_ run: DownloadRun)
+    func clearHistory()
+}
+
+// MARK: - Schema
+
+private struct HistoryFile: Codable {
+    static let currentVersion = 1
+
+    let version: Int
+    let runs: [DownloadRun]
+
+    init(runs: [DownloadRun]) {
+        self.version = Self.currentVersion
+        self.runs = runs
+    }
+}
+
+// MARK: - Implementation
+
 @Observable
-class HistoryManager {
+class HistoryManager: HistoryManaging {
     private(set) var runs: [DownloadRun] = []
     private let maxEntries = 100
 
@@ -80,13 +107,13 @@ class HistoryManager {
 
     private func save() {
         do {
-            // Ensure directory exists
             let directory = Self.historyURL.deletingLastPathComponent()
             if !FileManager.default.fileExists(atPath: directory.path) {
                 try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
             }
 
-            let data = try JSONEncoder().encode(runs)
+            let historyFile = HistoryFile(runs: runs)
+            let data = try JSONEncoder().encode(historyFile)
             try data.write(to: Self.historyURL)
         } catch {
             print("Failed to save history: \(error)")
@@ -98,10 +125,29 @@ class HistoryManager {
 
         do {
             let data = try Data(contentsOf: Self.historyURL)
-            runs = try JSONDecoder().decode([DownloadRun].self, from: data)
+
+            // Try loading versioned format first
+            if let historyFile = try? JSONDecoder().decode(HistoryFile.self, from: data) {
+                runs = migrate(historyFile)
+            } else {
+                // Fall back to legacy format (plain array)
+                runs = try JSONDecoder().decode([DownloadRun].self, from: data)
+                save() // Re-save in new versioned format
+            }
         } catch {
             print("Failed to load history: \(error)")
             runs = []
+        }
+    }
+
+    private func migrate(_ file: HistoryFile) -> [DownloadRun] {
+        // Handle future migrations based on version
+        switch file.version {
+        case 1:
+            return file.runs
+        default:
+            // Unknown future version, try to use runs as-is
+            return file.runs
         }
     }
 

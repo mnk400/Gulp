@@ -11,7 +11,7 @@ enum NavigationItem: Hashable {
 }
 
 struct SidebarView: View {
-    @Environment(AppState.self) private var state
+    @Environment(UIState.self) private var uiState
     @Environment(HistoryManager.self) private var historyManager
     @Environment(\.openSettings) private var openSettings
     @Binding var selection: NavigationItem?
@@ -35,7 +35,7 @@ struct SidebarView: View {
                         ForEach(historyManager.groupedByDate, id: \.0) { group, runs in
                             DisclosureGroup(group) {
                                 ForEach(runs) { run in
-                                    RunRow(run: run, isActive: state.currentRunId == run.id)
+                                    RunRow(run: run, isActive: uiState.currentRunId == run.id)
                                         .tag(NavigationItem.run(run.id))
                                         .contextMenu {
                                             Button {
@@ -141,6 +141,7 @@ struct RunRow: View {
 
 #Preview {
     SidebarView(selection: .constant(.download))
-        .environment(AppState())
+        .environment(UIState())
+        .environment(UserSettings())
         .environment(HistoryManager())
 }

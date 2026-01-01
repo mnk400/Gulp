@@ -8,7 +8,8 @@ import UserNotifications
 
 @main
 struct GulpApp: App {
-    @State private var appState = AppState()
+    @State private var uiState = UIState()
+    @State private var settings = UserSettings()
     @State private var historyManager = HistoryManager()
 
     init() {
@@ -22,7 +23,8 @@ struct GulpApp: App {
     var body: some Scene {
         WindowGroup {
             MainView()
-                .environment(appState)
+                .environment(uiState)
+                .environment(settings)
                 .environment(historyManager)
         }
         .windowResizability(.contentMinSize)

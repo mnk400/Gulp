@@ -1,6 +1,8 @@
+<img src="Assets/gulp.png" alt="Gulp Icon" width="100"/>
+
 # Gulp
 
-A macOS app for downloading images and galleries using [gallery-dl](https://github.com/mikf/gallery-dl).
+A simple macOS app for [gallery-dl](https://github.com/mikf/gallery-dl) with history and log management.
 
 ## Requirements
 
@@ -11,14 +13,11 @@ A macOS app for downloading images and galleries using [gallery-dl](https://gith
 
 - Paste a URL and download with one click
 - View download history and logs
-- Supports all sites that gallery-dl supports (Twitter, Reddit, Imgur, Pixiv, etc.)
-
-## Usage
-
-1. Paste a gallery or image URL
-2. Click Download
-3. Files are saved to `~/Downloads` by default (configurable in Settings)
+- Supports all sites that gallery-dl supports 
+- App managed instance of gallery-dl's config.json
 
 ## Building
 
 Open `Gulp.xcodeproj` in Xcode and build (⌘B).
+
+<img src="Assets/ui.png" alt="Gulp Icon" width="600"/>
