@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.2] - 2026-01-03
+
+### Changes
+- Updating README with new brew installation instructions.
+
+
+
 ## [0.1.1] - 2026-01-03
 
 ### Changes
