@@ -1,0 +1,237 @@
+name: Build and Release
+
+on:
+  push:
+    branches:
+      - main
+      - master
+
+jobs:
+  build-and-release:
+    runs-on: macos-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Xcode
+        uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: latest-stable
+
+      - name: Get current version and increment
+        id: version
+        run: |
+          # Get current version from Xcode project
+          CURRENT_VERSION=$(grep -m 1 "MARKETING_VERSION" Gulp.xcodeproj/project.pbxproj | sed 's/.*= \(.*\);/\1/')
+          echo "Current version: $CURRENT_VERSION"
+
+          # Split version into components
+          IFS='.' read -r -a VERSION_PARTS <<< "$CURRENT_VERSION"
+          MAJOR=${VERSION_PARTS[0]:-0}
+          MINOR=${VERSION_PARTS[1]:-0}
+          PATCH=${VERSION_PARTS[2]:-0}
+
+          # Increment patch version
+          PATCH=$((PATCH + 1))
+          NEW_VERSION="${MAJOR}.${MINOR}.${PATCH}"
+
+          echo "New version: $NEW_VERSION"
+          echo "new_version=$NEW_VERSION" >> $GITHUB_OUTPUT
+          echo "current_version=$CURRENT_VERSION" >> $GITHUB_OUTPUT
+
+      - name: Update version in Xcode project
+        run: |
+          NEW_VERSION="${{ steps.version.outputs.new_version }}"
+
+          # Update MARKETING_VERSION in project.pbxproj
+          sed -i '' "s/MARKETING_VERSION = .*/MARKETING_VERSION = $NEW_VERSION;/" Gulp.xcodeproj/project.pbxproj
+
+          # Increment build number
+          CURRENT_BUILD=$(grep -m 1 "CURRENT_PROJECT_VERSION" Gulp.xcodeproj/project.pbxproj | sed 's/.*= \(.*\);/\1/')
+          NEW_BUILD=$((CURRENT_BUILD + 1))
+          sed -i '' "s/CURRENT_PROJECT_VERSION = .*/CURRENT_PROJECT_VERSION = $NEW_BUILD;/" Gulp.xcodeproj/project.pbxproj
+
+          echo "Updated version to $NEW_VERSION (build $NEW_BUILD)"
+
+      - name: Update CHANGELOG
+        run: |
+          NEW_VERSION="${{ steps.version.outputs.new_version }}"
+          CURRENT_DATE=$(date +%Y-%m-%d)
+
+          # Get commit messages since last tag
+          LAST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "")
+          if [ -z "$LAST_TAG" ]; then
+            COMMITS=$(git log --pretty=format:"- %s" --no-merges)
+          else
+            COMMITS=$(git log ${LAST_TAG}..HEAD --pretty=format:"- %s" --no-merges)
+          fi
+
+          # Create new changelog entry
+          NEW_ENTRY="## [${NEW_VERSION}] - ${CURRENT_DATE}\n\n### Changes\n${COMMITS}\n\n"
+
+          # Prepend to CHANGELOG (after the first line)
+          if [ -f CHANGELOG.md ]; then
+            # Insert after the "# Changelog" line
+            awk -v entry="$NEW_ENTRY" 'NR==1{print; print ""; print entry; next} 1' CHANGELOG.md > CHANGELOG.tmp
+            mv CHANGELOG.tmp CHANGELOG.md
+          fi
+
+      - name: Build app
+        run: |
+          # Archive the app
+          xcodebuild archive \
+            -project Gulp.xcodeproj \
+            -scheme Gulp \
+            -configuration Release \
+            -archivePath ./build/Gulp.xcarchive \
+            -destination 'generic/platform=macOS' \
+            ONLY_ACTIVE_ARCH=NO \
+            ARCHS=arm64 \
+            CODE_SIGN_IDENTITY="-" \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGNING_ALLOWED=NO
+
+          echo "Archive complete"
+          ls -la build/Gulp.xcarchive/Products/Applications/
+
+      - name: Create DMG
+        run: |
+          NEW_VERSION="${{ steps.version.outputs.new_version }}"
+          APP_PATH="build/Gulp.xcarchive/Products/Applications/Gulp.app"
+          DMG_NAME="Gulp-${NEW_VERSION}.dmg"
+
+          # Create temporary directory for DMG contents
+          mkdir -p dmg_temp
+          cp -R "$APP_PATH" dmg_temp/
+
+          # Create symbolic link to Applications folder
+          ln -s /Applications dmg_temp/Applications
+
+          # Create DMG
+          hdiutil create -volname "Gulp" \
+            -srcfolder dmg_temp \
+            -ov \
+            -format UDZO \
+            "$DMG_NAME"
+
+          echo "dmg_path=$DMG_NAME" >> $GITHUB_OUTPUT
+          ls -lh "$DMG_NAME"
+        id: create_dmg
+
+      - name: Commit version bump
+        run: |
+          NEW_VERSION="${{ steps.version.outputs.new_version }}"
+
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          git add Gulp.xcodeproj/project.pbxproj CHANGELOG.md
+          git commit -m "Bump version to ${NEW_VERSION}" || echo "No changes to commit"
+
+          # Create and push tag
+          git tag -a "v${NEW_VERSION}" -m "Release v${NEW_VERSION}"
+          git push origin HEAD:${{ github.ref_name }}
+          git push origin "v${NEW_VERSION}"
+
+      - name: Generate release notes
+        id: release_notes
+        run: |
+          NEW_VERSION="${{ steps.version.outputs.new_version }}"
+          LAST_TAG=$(git describe --tags --abbrev=0 HEAD^ 2>/dev/null || echo "")
+
+          if [ -z "$LAST_TAG" ]; then
+            NOTES="Initial automated release"
+          else
+            NOTES=$(git log ${LAST_TAG}..HEAD^ --pretty=format:"- %s" --no-merges)
+          fi
+
+          # Write to file for multiline handling
+          cat > release_notes.txt << EOF
+          ## What's Changed
+
+          $NOTES
+
+          ## Installation
+
+          ### Via Homebrew
+          \`\`\`bash
+          brew tap mnk400/tap
+          brew install --cask gulp
+          \`\`\`
+
+          ### Manual Installation
+          1. Download \`Gulp-${NEW_VERSION}.dmg\`
+          2. Open the DMG and drag Gulp to Applications
+          3. Install gallery-dl: \`brew install gallery-dl\`
+
+          **Note:** The app is not notarized. Right-click and select "Open" on first launch, or run:
+          \`\`\`bash
+          xattr -cr /Applications/Gulp.app
+          \`\`\`
+          EOF
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: v${{ steps.version.outputs.new_version }}
+          name: Gulp v${{ steps.version.outputs.new_version }}
+          body_path: release_notes.txt
+          files: ${{ steps.create_dmg.outputs.dmg_path }}
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Update Homebrew Cask
+        run: |
+          NEW_VERSION="${{ steps.version.outputs.new_version }}"
+          DMG_PATH="${{ steps.create_dmg.outputs.dmg_path }}"
+
+          # Calculate SHA256
+          SHA256=$(shasum -a 256 "$DMG_PATH" | awk '{print $1}')
+
+          echo "Version: $NEW_VERSION"
+          echo "SHA256: $SHA256"
+
+          # Clone tap repository
+          git clone https://github.com/mnk400/homebrew-tap.git /tmp/homebrew-tap
+          cd /tmp/homebrew-tap
+
+          # Create Casks directory if it doesn't exist
+          mkdir -p Casks
+
+          # Create or update the cask
+          cat > Casks/gulp.rb << EOF
+          cask "gulp" do
+            version "${NEW_VERSION}"
+            sha256 "${SHA256}"
+
+            url "https://github.com/mnk400/Gulp/releases/download/v#{version}/Gulp-#{version}.dmg"
+            name "Gulp"
+            desc "Gallery-DL front-end in Swift UI"
+            homepage "https://github.com/mnk400/Gulp"
+
+            depends_on formula: "gallery-dl"
+
+            app "Gulp.app"
+
+            zap trash: [
+              "~/Library/Application Support/Gulp",
+              "~/Library/Preferences/com.mnk.Gulp.plist",
+            ]
+          end
+          EOF
+
+          # Commit and push
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add Casks/gulp.rb
+          git commit -m "gulp ${NEW_VERSION}" || echo "No changes to commit"
+          git push https://x-access-token:${{ secrets.PAT_TOKEN }}@github.com/mnk400/homebrew-tap.git main
+        env:
+          PAT_TOKEN: ${{ secrets.PAT_TOKEN }}
