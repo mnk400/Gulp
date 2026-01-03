@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.1] - 2026-01-03
+
+### Changes
+- Add automated release workflow
+
+
+
 ## [0.1.0] - 2025-01-01
 
 ### Added
