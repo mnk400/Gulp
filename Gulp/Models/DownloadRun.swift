@@ -74,4 +74,43 @@ struct DownloadRun: Identifiable, Codable {
         case .cancelled: return "gray"
         }
     }
+
+    /// Determines the actual directory where files were downloaded by parsing log entries.
+    /// Returns the deepest common directory from file paths in the logs, or falls back to outputDirectory.
+    var actualDownloadDirectory: String {
+        // Find all download log entries that contain file paths
+        let downloadPaths = logs
+            .filter { $0.type == .download && $0.message.contains("/") }
+            .map { $0.message }
+
+        guard !downloadPaths.isEmpty else {
+            return outputDirectory
+        }
+
+        // Extract directory paths (remove filename)
+        let directories = downloadPaths.compactMap { path -> String? in
+            let url = URL(fileURLWithPath: path)
+            return url.deletingLastPathComponent().path
+        }
+
+        guard !directories.isEmpty else {
+            return outputDirectory
+        }
+
+        // Find the deepest common directory
+        // Start with the first directory and find the longest common path
+        var commonPath = directories[0]
+
+        for dir in directories.dropFirst() {
+            while !dir.hasPrefix(commonPath) && !commonPath.isEmpty {
+                // Go up one directory level
+                let url = URL(fileURLWithPath: commonPath)
+                commonPath = url.deletingLastPathComponent().path
+            }
+        }
+
+        // If we found a common path that's more specific than the base output directory, use it
+        // Otherwise fall back to the base output directory
+        return commonPath.isEmpty ? outputDirectory : commonPath
+    }
 }

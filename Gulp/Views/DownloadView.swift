@@ -113,7 +113,7 @@ struct DownloadView: View {
                 .frame(maxWidth: .infinity)
                 .frame(height: 35)
             }
-            .buttonStyle(.glassProminent)
+            .buttonStyle(.glass)
             .buttonBorderShape(.capsule)
             .tint(buttonTint)
             .controlSize(.large)

@@ -40,7 +40,10 @@ struct LogDetailView: View {
                     } label: {
                         Label("Open in Finder", systemImage: "folder")
                     }
-                    .buttonStyle(.glass)
+                    .buttonStyle(.glassProminent)
+                    .buttonBorderShape(.capsule)
+                    .tint(.accentColor)
+                    .controlSize(.regular)
                 }
             }
             .padding()
@@ -73,8 +76,20 @@ struct LogDetailView: View {
     }
 
     private func openInFinder() {
-        let url = URL(fileURLWithPath: run.outputDirectory)
-        NSWorkspace.shared.open(url)
+        let fileManager = FileManager.default
+        var directoryToOpen: URL
+
+        // Try to open the "Actual download directory", fallback to
+        // default downloads output dir otherwise
+        let actualDir = URL(fileURLWithPath: run.actualDownloadDirectory)
+        if fileManager.fileExists(atPath: actualDir.path) {
+            directoryToOpen = actualDir
+        } else {
+            let baseDir = URL(fileURLWithPath: run.outputDirectory)
+            directoryToOpen = baseDir
+        }
+
+        NSWorkspace.shared.open(directoryToOpen)
     }
 }
 
