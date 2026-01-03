@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.3] - 2026-01-03
+
+### Changes
+- feat(logs): Update the "Open in finder" button to open the deepest common directory, and update button styling
+
+
+
 ## [0.1.2] - 2026-01-03
 
 ### Changes
