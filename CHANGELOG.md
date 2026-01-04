@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.1.6] - 2026-01-04
+
+### Changes
+- feat(sidebar): Button to open up gallery-dl config in the sidebar
+- feat(errors): Adding a guidance section for failed/errored download runs, cleaning up ANSI from logs, adding a "View Logs" button to the error pop-ups
+- chore(config): Adding guidance to the default config
+
+
 ## [0.1.5] - 2026-01-04
 
 ### Changes
