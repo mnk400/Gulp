@@ -46,7 +46,9 @@ struct LogDetailView: View {
                     .controlSize(.regular)
                 }
             }
-            .padding()
+            .padding(.horizontal, 20)
+            .padding(.top, 4)
+            .padding(.bottom, 10)
             .background(.ultraThinMaterial)
 
             Divider()
@@ -61,6 +63,7 @@ struct LogDetailView: View {
                         }
                     }
                     .padding()
+                    .padding(.horizontal, 4)
                     .frame(maxWidth: .infinity, alignment: .leading)
                 }
                 .onAppear {

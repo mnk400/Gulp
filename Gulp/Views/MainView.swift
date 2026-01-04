@@ -17,6 +17,7 @@ struct MainView: View {
             detailView
         }
         .frame(minWidth: 700, minHeight: 400)
+        .toolbarBackgroundVisibility(.hidden, for: .windowToolbar)
     }
 
     @ViewBuilder

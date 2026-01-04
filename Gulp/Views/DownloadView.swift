@@ -197,7 +197,9 @@ struct DownloadView: View {
                 Spacer()
             }
         }
-        .padding(24)
+        .padding(.horizontal, 20)
+        .padding(.top, 16)
+        .padding(.bottom, 24)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(.ultraThinMaterial)
         .alert("Error", isPresented: $showError) {
