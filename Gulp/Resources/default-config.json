@@ -1,4 +1,7 @@
 {
+    "#_00": "gallery-dl-server default configuration file 2.0.1",
+    "#_01": "full documentation at",
+    "#_02": "https://gdl-org.github.io/docs/configuration.html",
     "extractor": {
         "base-directory": "~/Downloads/Gallery-DL"
     },
