@@ -26,6 +26,9 @@ class UIState {
     var showCompleted: Bool = false
     var completedRunId: UUID?
 
+    // Retry/auto-start trigger
+    var shouldAutoStart: Bool = false
+
     func resetDownloadState() {
         isDownloading = false
         currentFile = ""

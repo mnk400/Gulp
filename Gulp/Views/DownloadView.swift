@@ -21,7 +21,7 @@ struct DownloadView: View {
         } else if uiState.isDownloading {
             return .red
         }
-        return nil
+        return .accentColor
     }
 
     private var buttonIcon: String {
@@ -212,6 +212,11 @@ struct DownloadView: View {
             if GalleryDLRunner.findExecutable() == nil {
                 errorMessage = "gallery-dl is not installed.\n\nInstall it with Homebrew:\nbrew install gallery-dl"
                 showError = true
+            }
+            // Check if we should auto-start a download (from retry)
+            if uiState.shouldAutoStart {
+                uiState.shouldAutoStart = false
+                startDownload()
             }
         }
     }

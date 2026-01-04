@@ -71,13 +71,15 @@ jobs:
             COMMITS=$(git log ${LAST_TAG}..HEAD --pretty=format:"- %s" --no-merges)
           fi
 
-          # Create new changelog entry
-          NEW_ENTRY="## [${NEW_VERSION}] - ${CURRENT_DATE}\n\n### Changes\n${COMMITS}\n\n"
-
-          # Prepend to CHANGELOG (after the first line)
+          # Create new changelog entry using printf for proper newlines
           if [ -f CHANGELOG.md ]; then
-            # Insert after the "# Changelog" line
-            awk -v entry="$NEW_ENTRY" 'NR==1{print; print ""; print entry; next} 1' CHANGELOG.md > CHANGELOG.tmp
+            # Create temp file with new entry
+            {
+              head -n 1 CHANGELOG.md
+              echo ""
+              printf "## [%s] - %s\n\n### Changes\n%s\n\n" "$NEW_VERSION" "$CURRENT_DATE" "$COMMITS"
+              tail -n +2 CHANGELOG.md
+            } > CHANGELOG.tmp
             mv CHANGELOG.tmp CHANGELOG.md
           fi
 

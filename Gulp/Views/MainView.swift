@@ -28,7 +28,7 @@ struct MainView: View {
 
         case .run(let id):
             if let run = historyManager.runs.first(where: { $0.id == id }) {
-                LogDetailView(run: run)
+                LogDetailView(run: run, selection: $selection)
             } else {
                 ContentUnavailableView("Run Not Found", systemImage: "questionmark.folder")
             }

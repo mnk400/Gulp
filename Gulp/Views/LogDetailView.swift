@@ -8,6 +8,8 @@ import AppKit
 
 struct LogDetailView: View {
     let run: DownloadRun
+    @Binding var selection: NavigationItem?
+    @Environment(UIState.self) private var uiState
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -35,15 +37,29 @@ struct LogDetailView: View {
 
                     Spacer()
 
-                    Button {
-                        openInFinder()
-                    } label: {
-                        Label("Open in Finder", systemImage: "folder")
+                    HStack(spacing: 8) {
+                        if run.status == .failed {
+                            Button {
+                                retryDownload()
+                            } label: {
+                                Label("Retry", systemImage: "arrow.clockwise")
+                            }
+                            .buttonStyle(.glassProminent)
+                            .buttonBorderShape(.capsule)
+                            .tint(.orange)
+                            .controlSize(.regular)
+                        }
+
+                        Button {
+                            openInFinder()
+                        } label: {
+                            Label("Open in Finder", systemImage: "folder")
+                        }
+                        .buttonStyle(.glassProminent)
+                        .buttonBorderShape(.capsule)
+                        .tint(.accentColor)
+                        .controlSize(.regular)
                     }
-                    .buttonStyle(.glassProminent)
-                    .buttonBorderShape(.capsule)
-                    .tint(.accentColor)
-                    .controlSize(.regular)
                 }
             }
             .padding(.horizontal, 20)
@@ -93,6 +109,12 @@ struct LogDetailView: View {
         }
 
         NSWorkspace.shared.open(directoryToOpen)
+    }
+
+    private func retryDownload() {
+        uiState.url = run.url
+        uiState.shouldAutoStart = true
+        selection = .download
     }
 }
 
@@ -155,8 +177,4 @@ struct LogEntryRow: View {
         case .warning: return .orange
         }
     }
-}
-
-#Preview {
-    LogDetailView(run: DownloadRun(url: "https://example.com/gallery", outputDirectory: "~/Downloads"))
 }
