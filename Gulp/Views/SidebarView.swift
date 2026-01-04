@@ -69,16 +69,31 @@ struct SidebarView: View {
 
             Divider()
 
-            // Settings button at bottom
-            Button {
-                openSettings()
-            } label: {
-                Label("Settings", systemImage: "gearshape")
-                    .frame(maxWidth: .infinity, alignment: .leading)
+            // Bottom buttons
+            VStack(spacing: 0) {
+                Button {
+                    openSettings()
+                } label: {
+                    Label("Settings", systemImage: "gearshape")
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+                .buttonStyle(.plain)
+                .padding(.horizontal, 16)
+                .padding(.vertical, 8)
+                
+                Divider()
+                
+                Button {
+                    ConfigManager.openInEditor()
+                } label: {
+                    Label("Gallery-dl Config", systemImage: "doc.text")
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+                .buttonStyle(.plain)
+                .padding(.horizontal, 16)
+                .padding(.vertical, 8)
             }
-            .buttonStyle(.plain)
-            .padding(.horizontal, 16)
-            .padding(.vertical, 12)
+            .padding(.vertical, 4)
         }
         .frame(minWidth: 180)
     }
