@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.1.5] - 2026-01-04
+
+### Changes
+- feat(sidebar): Show website favicons in the sidebar, minor tweaks to UI elements.
+
+
 ## [0.1.4] - 2026-01-04
 
 ### Changes
