@@ -69,6 +69,65 @@ struct LogDetailView: View {
 
             Divider()
 
+            // Guidance section for failed runs
+            if run.status == .failed {
+                VStack(alignment: .leading, spacing: 12) {
+                    HStack(spacing: 8) {
+                        Image(systemName: "info.circle.fill")
+                            .foregroundStyle(.blue)
+                            .font(.system(size: 16))
+
+                        Text("Need Help?")
+                            .font(.subheadline)
+                            .fontWeight(.semibold)
+                    }
+
+                    Text("Many download failures are due to authentication or site-specific configuration. Gallery-dl may need cookies from your browser, OAuth tokens, or username/password credentials to access certain content.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+
+                    HStack(spacing: 16) {
+                        Button {
+                            ConfigManager.openInEditor()
+                        } label: {
+                            HStack(spacing: 4) {
+                                Image(systemName: "gearshape")
+                                Text("Open Gallery-dl Config")
+                            }
+                            .font(.caption)
+                        }
+                        .buttonStyle(.link)
+
+                        Button {
+                            NSWorkspace.shared.open(URL(string: "https://github.com/mikf/gallery-dl/blob/master/docs/configuration.rst")!)
+                        } label: {
+                            HStack(spacing: 4) {
+                                Image(systemName: "doc.text")
+                                Text("Configuration Guide")
+                            }
+                            .font(.caption)
+                        }
+                        .buttonStyle(.link)
+
+                        Button {
+                            NSWorkspace.shared.open(URL(string: "https://github.com/mikf/gallery-dl/blob/master/docs/supportedsites.md")!)
+                        } label: {
+                            HStack(spacing: 4) {
+                                Image(systemName: "list.bullet")
+                                Text("Supported Sites")
+                            }
+                            .font(.caption)
+                        }
+                        .buttonStyle(.link)
+                    }
+                }
+                .padding()
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(.blue.opacity(0.08))
+
+                Divider()
+            }
+
             // Logs
             ScrollViewReader { proxy in
                 ScrollView {

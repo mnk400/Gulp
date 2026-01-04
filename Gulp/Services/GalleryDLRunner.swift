@@ -180,9 +180,19 @@ class GalleryDLRunner: DownloadRunning {
         currentProcess?.terminate()
     }
 
+    private func stripANSI(_ text: String) -> String {
+        // Remove ANSI escape codes (e.g., [1;33m for colors)
+        text.replacingOccurrences(
+            of: "\\x1B\\[[0-9;]*m",
+            with: "",
+            options: .regularExpression
+        )
+    }
+
     private func parseOutput(line: String, uiState: UIState, historyManager: HistoryManaging) async {
         await MainActor.run {
-            let trimmedLine = line.trimmingCharacters(in: .whitespacesAndNewlines)
+            let cleanedLine = stripANSI(line)
+            let trimmedLine = cleanedLine.trimmingCharacters(in: .whitespacesAndNewlines)
             guard !trimmedLine.isEmpty else { return }
 
             // Add to current run's logs
