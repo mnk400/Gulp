@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.4] - 2026-01-04
+
+### Changes
+- Adding a retry button in the logs view for failed download attempts
+- fix(padding): Fix minor padding issues in Logs and Download view
+
+
 ## [0.1.3] - 2026-01-03
 
 ### Changes
