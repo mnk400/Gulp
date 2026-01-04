@@ -17,7 +17,7 @@ struct DownloadView: View {
 
     private var buttonTint: Color? {
         if uiState.showCompleted {
-            return .green
+            return Color(red: 110/255, green: 163/255, blue: 95/255)
         } else if uiState.isDownloading {
             return .red
         }

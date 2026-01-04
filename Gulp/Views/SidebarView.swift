@@ -98,43 +98,50 @@ struct RunRow: View {
     let run: DownloadRun
     let isActive: Bool
 
-    private var displayText: String {
-        if run.fileCount > 0 {
-            return "\(run.displayName) - \(run.fileCount) files"
-        }
-        return run.displayName
-    }
-
     var body: some View {
-        HStack(spacing: 8) {
-            Circle()
-                .fill(statusColor)
-                .frame(width: 8, height: 8)
+        HStack(spacing: 6) {
+            FaviconView(domain: run.faviconDomain)
 
-            Text(displayText)
+            Text(run.displayName)
                 .font(.callout)
                 .lineLimit(1)
 
-            Spacer()
-
+            // Status indicators
             if isActive {
                 ProgressView()
                     .scaleEffect(0.5)
                     .frame(width: 16, height: 16)
+            } else if run.status != .inProgress {
+                statusBadge
             }
+
+            Spacer()
         }
     }
 
-    private var statusColor: Color {
+    @ViewBuilder
+    private var statusBadge: some View {
+        let (text, color) = badgeContent
+        Text(text)
+            .font(.caption2)
+            .foregroundStyle(.white)
+            .padding(.horizontal, 6)
+            .padding(.vertical, 2)
+            .background(color)
+            .clipShape(Capsule())
+    }
+
+    private var badgeContent: (String, Color) {
         switch run.status {
-        case .inProgress:
-            return .yellow
         case .completed:
-            return .green
+            let fileText = run.fileCount == 1 ? "1 file" : "\(run.fileCount) files"
+            return (fileText, .secondary)
         case .failed:
-            return .red
+            return ("Failed", .red)
         case .cancelled:
-            return .gray
+            return ("Cancelled", .secondary)
+        case .inProgress:
+            return ("", .clear)  // Not used, but required for exhaustive switch
         }
     }
 }

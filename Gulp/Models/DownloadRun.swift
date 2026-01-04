@@ -66,6 +66,13 @@ struct DownloadRun: Identifiable, Codable {
         return domain
     }
 
+    var faviconDomain: String {
+        // Return full host for favicon API (including www.)
+        guard let urlObj = URL(string: url),
+              let host = urlObj.host else { return "" }
+        return host
+    }
+
     var statusColor: String {
         switch status {
         case .inProgress: return "yellow"

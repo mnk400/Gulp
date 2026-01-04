@@ -2,9 +2,11 @@
 
 # Gulp
 
-A simple macOS app for [gallery-dl](https://github.com/mikf/gallery-dl) with history and log management.
+A simple macOS UI wrapper for [gallery-dl](https://github.com/mikf/gallery-dl) with history and log management.
 
-<img src="Assets/ui.png" alt="Gulp UI" width="600"/>
+Gallery-DL is a command-line program to download image galleries and collections from several image hosting sites, Gulp builds a simple and managed UI around it for ease of access.
+
+![](Assets/ui.png)
 
 ## Installation
 
