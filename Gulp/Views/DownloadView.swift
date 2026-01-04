@@ -14,6 +14,7 @@ struct DownloadView: View {
     @State private var runner = GalleryDLRunner()
     @State private var showError = false
     @State private var errorMessage = ""
+    @State private var errorRunId: UUID?
 
     private var buttonTint: Color? {
         if uiState.showCompleted {
@@ -203,6 +204,11 @@ struct DownloadView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(.ultraThinMaterial)
         .alert("Error", isPresented: $showError) {
+            if let runId = errorRunId {
+                Button("View Logs") {
+                    selection = .run(runId)
+                }
+            }
             Button("OK", role: .cancel) { }
         } message: {
             Text(errorMessage)
@@ -244,6 +250,8 @@ struct DownloadView: View {
             } catch GalleryDLError.cancelled {
                 // User cancelled, no error needed
             } catch {
+                // Store the run ID for the "View Logs" button
+                errorRunId = historyManager.runs.first?.id
                 errorMessage = error.localizedDescription
                 showError = true
             }
