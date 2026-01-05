@@ -50,9 +50,23 @@ struct ConfigManager {
         }
     }
 
-    static func openInEditor() {
-        ensureConfigExists()
-        NSWorkspace.shared.open(configURL)
+    static func openInEditor(settings: UserSettings? = nil) {
+        let url = effectiveConfigURL(for: settings)
+        if url == configURL {
+            ensureConfigExists()
+        }
+        NSWorkspace.shared.open(url)
+    }
+
+    /// Returns the config URL to use based on user settings
+    static func effectiveConfigURL(for settings: UserSettings?) -> URL {
+        if let settings = settings,
+           settings.useCustomConfig,
+           let customURL = settings.customConfigURL,
+           FileManager.default.fileExists(atPath: customURL.path) {
+            return customURL
+        }
+        return configURL
     }
 
     static func updateBaseDirectory(_ path: String) {

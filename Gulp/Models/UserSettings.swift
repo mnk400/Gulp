@@ -39,4 +39,35 @@ class UserSettings {
         get { UserDefaults.standard.object(forKey: "showNotifications") as? Bool ?? true }
         set { UserDefaults.standard.set(newValue, forKey: "showNotifications") }
     }
+
+    // Config source
+    var useCustomConfig: Bool {
+        get { UserDefaults.standard.bool(forKey: "useCustomConfig") }
+        set { UserDefaults.standard.set(newValue, forKey: "useCustomConfig") }
+    }
+
+    var customConfigBookmark: Data? {
+        get { UserDefaults.standard.data(forKey: "customConfigBookmark") }
+        set { UserDefaults.standard.set(newValue, forKey: "customConfigBookmark") }
+    }
+
+    /// Resolves the stored bookmark to a URL, returns nil if invalid or not set
+    var customConfigURL: URL? {
+        guard let bookmark = customConfigBookmark else { return nil }
+        var isStale = false
+        guard let url = try? URL(
+            resolvingBookmarkData: bookmark,
+            options: .withSecurityScope,
+            relativeTo: nil,
+            bookmarkDataIsStale: &isStale
+        ) else { return nil }
+
+        // If bookmark is stale, try to refresh it
+        if isStale {
+            if let newBookmark = try? url.bookmarkData(options: .withSecurityScope) {
+                customConfigBookmark = newBookmark
+            }
+        }
+        return url
+    }
 }

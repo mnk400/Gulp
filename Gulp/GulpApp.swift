@@ -36,6 +36,7 @@ struct GulpApp: App {
         #if os(macOS)
         Settings {
             SettingsView()
+                .environment(settings)
         }
         #endif
     }

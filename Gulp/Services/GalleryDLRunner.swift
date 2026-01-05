@@ -62,7 +62,11 @@ class GalleryDLRunner: DownloadRunning {
             throw GalleryDLError.notInstalled
         }
 
-        ConfigManager.ensureConfigExists()
+        // Determine which config to use
+        let configURL = ConfigManager.effectiveConfigURL(for: settings)
+        if configURL == ConfigManager.configURL {
+            ConfigManager.ensureConfigExists()
+        }
 
         // Ensure output directory exists
         if !FileManager.default.fileExists(atPath: outputDir.path) {
@@ -83,7 +87,7 @@ class GalleryDLRunner: DownloadRunning {
         process.executableURL = URL(fileURLWithPath: executablePath)
 
         var arguments = [
-            "--config", ConfigManager.configURL.path,
+            "--config", configURL.path,
             "--destination", outputDir.path
         ]
 
