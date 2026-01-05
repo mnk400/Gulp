@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.1.7] - 2026-01-05
+
+### Changes
+- chore(logs): Tweaking logs colors
+
+
 ## [0.1.6] - 2026-01-04
 
 ### Changes
