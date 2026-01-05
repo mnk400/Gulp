@@ -230,8 +230,8 @@ struct LogEntryRow: View {
 
     private var logColor: Color {
         switch entry.type {
-        case .info: return .primary
-        case .download: return .green
+        case .info: return .gray
+        case .download: return .primary
         case .error: return .red
         case .warning: return .orange
         }
