@@ -6,6 +6,16 @@
 import SwiftUI
 import UserNotifications
 
+struct AboutCommand: View {
+    @Environment(\.openWindow) private var openWindow
+
+    var body: some View {
+        Button("About Gulp") {
+            openWindow(id: "about")
+        }
+    }
+}
+
 @main
 struct GulpApp: App {
     @State private var uiState = UIState()
@@ -31,12 +41,21 @@ struct GulpApp: App {
         .defaultSize(width: 800, height: 500)
         .commands {
             CommandGroup(replacing: .newItem) { }
+            CommandGroup(replacing: .appInfo) {
+                AboutCommand()
+            }
         }
 
         #if os(macOS)
         Settings {
             SettingsView()
         }
+
+        Window("About Gulp", id: "about") {
+            AboutView()
+        }
+        .windowResizability(.contentSize)
+        .windowStyle(.hiddenTitleBar)
         #endif
     }
 }
