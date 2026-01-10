@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.1.8] - 2026-01-10
+
+### Changes
+- chore(readme): Updating screenshots
+
+
 ## [0.1.7] - 2026-01-05
 
 ### Changes
