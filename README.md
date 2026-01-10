@@ -6,8 +6,6 @@ A simple macOS UI wrapper for [gallery-dl](https://github.com/mikf/gallery-dl) w
 
 Gallery-DL is a command-line program to download image galleries and collections from several image hosting sites, Gulp builds a simple and managed UI around it for ease of access.
 
-![](Assets/ui.png)
-
 ## Installation
 
 ### Using Brew
@@ -40,6 +38,11 @@ brew install --cask gulp --no-quarantine
 - View download history and logs
 - Supports all sites that gallery-dl supports
 - App managed instance of gallery-dl's config.json
+
+## Screenshots
+
+![](Assets/ui.png)
+![](Assets/ui-2.png)
 
 ## License
 
