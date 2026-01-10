@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.1.9] - 2026-01-10
+
+### Changes
+- chore: An about view and adding a path filter for github workflow
+
+
 ## [0.1.8] - 2026-01-10
 
 ### Changes
