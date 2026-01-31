@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.10] - 2026-01-31
+
+### Changes
+- fix(parsing): Rewrite gallery-dl output parser to correctly detect files, skips, and errors File detection now uses hasPrefix("/") instead of contains("/") which was misclassifying stderr lines as downloads. Adds skip tracking, removes dead [n/N] progress code, fixes pipe read race condition on process exit, and closes pipe on cancel to unblock the reader.
+- feat(debugging): Information about long running no feedback gallery-dl runs, and better run cancellation support for when child processes are spawned
+
+
 ## [0.1.9] - 2026-01-10
 
 ### Changes
