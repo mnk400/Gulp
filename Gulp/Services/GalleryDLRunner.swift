@@ -75,6 +75,7 @@ class GalleryDLRunner: DownloadRunning {
         historyManager.addRun(run)
         currentRun = run
 
+        isCancelling = false
         uiState.resetDownloadState()
         uiState.isDownloading = true
         uiState.currentRunId = run.id
@@ -97,12 +98,16 @@ class GalleryDLRunner: DownloadRunning {
             arguments.append("--write-metadata")
         }
 
+        arguments.append("--no-input")
         arguments.append(url)
         process.arguments = arguments
+
+        process.qualityOfService = .userInitiated
 
         let pipe = Pipe()
         process.standardOutput = pipe
         process.standardError = pipe
+        process.standardInput = FileHandle.nullDevice
 
         self.currentProcess = process
         self.outputPipe = pipe
@@ -128,7 +133,15 @@ class GalleryDLRunner: DownloadRunning {
                     if var run = self?.currentRun {
                         run.fileCount = uiState.downloadedCount
 
-                        if proc.terminationStatus == 0 {
+                        let wasCancelled = self?.isCancelling ?? false
+                        self?.isCancelling = false
+
+                        if wasCancelled || proc.terminationStatus == 15 || proc.terminationStatus == 9 {
+                            run.status = .cancelled
+                            run.addLog("Download cancelled by user", type: .warning)
+                            historyManager.updateRun(run)
+                            continuation.resume(throwing: GalleryDLError.cancelled)
+                        } else if proc.terminationStatus == 0 {
                             run.status = .completed
                             run.addLog("Download completed: \(uiState.downloadedCount) files", type: .info)
                             historyManager.updateRun(run)
@@ -137,11 +150,6 @@ class GalleryDLRunner: DownloadRunning {
                                 self?.sendCompletionNotification(count: uiState.downloadedCount)
                             }
                             continuation.resume()
-                        } else if proc.terminationStatus == 15 || proc.terminationStatus == 9 {
-                            run.status = .cancelled
-                            run.addLog("Download cancelled by user", type: .warning)
-                            historyManager.updateRun(run)
-                            continuation.resume(throwing: GalleryDLError.cancelled)
                         } else {
                             run.status = .failed
                             let error = uiState.errorMessage ?? "Download failed with exit code \(proc.terminationStatus)"
@@ -164,6 +172,7 @@ class GalleryDLRunner: DownloadRunning {
 
             do {
                 try process.run()
+                uiState.lastActivityTime = Date()
             } catch {
                 uiState.isDownloading = false
                 if var run = self.currentRun {
@@ -176,8 +185,19 @@ class GalleryDLRunner: DownloadRunning {
         }
     }
 
+    private var isCancelling = false
+
     func cancel() {
-        currentProcess?.terminate()
+        guard let process = currentProcess, process.isRunning else { return }
+        isCancelling = true
+        let pid = process.processIdentifier
+        // Kill the process group so child processes (e.g. yt-dlp) are also terminated
+        kill(-pid, SIGINT)
+        DispatchQueue.global().asyncAfter(deadline: .now() + 3) {
+            if process.isRunning {
+                kill(-pid, SIGKILL)
+            }
+        }
     }
 
     private func stripANSI(_ text: String) -> String {
@@ -191,6 +211,7 @@ class GalleryDLRunner: DownloadRunning {
 
     private func parseOutput(line: String, uiState: UIState, historyManager: HistoryManaging) async {
         await MainActor.run {
+            uiState.lastActivityTime = Date()
             let cleanedLine = stripANSI(line)
             let trimmedLine = cleanedLine.trimmingCharacters(in: .whitespacesAndNewlines)
             guard !trimmedLine.isEmpty else { return }

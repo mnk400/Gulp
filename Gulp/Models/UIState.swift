@@ -21,6 +21,7 @@ class UIState {
     var progress: Double = 0.0
     var errorMessage: String?
     var currentRunId: UUID?
+    var lastActivityTime: Date?
 
     // Completed state (persists across view switches)
     var showCompleted: Bool = false
@@ -36,5 +37,6 @@ class UIState {
         totalCount = 0
         progress = 0.0
         errorMessage = nil
+        lastActivityTime = nil
     }
 }

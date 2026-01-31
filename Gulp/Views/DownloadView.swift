@@ -5,6 +5,7 @@
 
 import SwiftUI
 import AppKit
+import Combine
 
 struct DownloadView: View {
     @Environment(UIState.self) private var uiState
@@ -15,6 +16,9 @@ struct DownloadView: View {
     @State private var showError = false
     @State private var errorMessage = ""
     @State private var errorRunId: UUID?
+    @State private var stallMessage: String?
+
+    private let activityTimer = Timer.publish(every: 2, on: .main, in: .common).autoconnect()
 
     private var buttonTint: Color? {
         if uiState.showCompleted {
@@ -151,7 +155,15 @@ struct DownloadView: View {
                             .lineLimit(1)
                             .truncationMode(.middle)
                             .frame(maxWidth: .infinity, alignment: .leading)
+                    } else if let stallMessage {
+                        Text(stallMessage)
+                            .font(.caption2)
+                            .foregroundStyle(.tertiary)
+                            .frame(maxWidth: .infinity, alignment: .leading)
                     }
+                }
+                .onReceive(activityTimer) { _ in
+                    updateStallMessage()
                 }
             }
 
@@ -213,7 +225,13 @@ struct DownloadView: View {
         } message: {
             Text(errorMessage)
         }
+        .onChange(of: uiState.isDownloading) { _, isDownloading in
+            if !isDownloading {
+                stallMessage = nil
+            }
+        }
         .onAppear {
+            updateStallMessage()
             // Check if gallery-dl is installed on first launch
             if GalleryDLRunner.findExecutable() == nil {
                 errorMessage = "gallery-dl is not installed.\n\nInstall it with Homebrew:\nbrew install gallery-dl"
@@ -224,6 +242,22 @@ struct DownloadView: View {
                 uiState.shouldAutoStart = false
                 startDownload()
             }
+        }
+    }
+
+    private func updateStallMessage() {
+        guard uiState.isDownloading,
+              let last = uiState.lastActivityTime else {
+            stallMessage = nil
+            return
+        }
+        let elapsed = Date().timeIntervalSince(last)
+        if elapsed > 30 {
+            stallMessage = "Still waiting... gallery-dl may be retrying or the server is slow"
+        } else if elapsed > 10 {
+            stallMessage = "Waiting for response..."
+        } else {
+            stallMessage = nil
         }
     }
 
