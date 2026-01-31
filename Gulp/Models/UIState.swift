@@ -17,8 +17,7 @@ class UIState {
     var isDownloading: Bool = false
     var currentFile: String = ""
     var downloadedCount: Int = 0
-    var totalCount: Int = 0
-    var progress: Double = 0.0
+    var skippedCount: Int = 0
     var errorMessage: String?
     var currentRunId: UUID?
     var lastActivityTime: Date?
@@ -34,8 +33,7 @@ class UIState {
         isDownloading = false
         currentFile = ""
         downloadedCount = 0
-        totalCount = 0
-        progress = 0.0
+        skippedCount = 0
         errorMessage = nil
         lastActivityTime = nil
     }

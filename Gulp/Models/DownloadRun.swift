@@ -15,6 +15,7 @@ enum RunStatus: String, Codable {
 enum LogType: String, Codable {
     case info
     case download
+    case skip
     case error
     case warning
 }
@@ -85,9 +86,9 @@ struct DownloadRun: Identifiable, Codable {
     /// Determines the actual directory where files were downloaded by parsing log entries.
     /// Returns the deepest common directory from file paths in the logs, or falls back to outputDirectory.
     var actualDownloadDirectory: String {
-        // Find all download log entries that contain file paths
+        // Find all download/skip log entries that contain file paths
         let downloadPaths = logs
-            .filter { $0.type == .download && $0.message.contains("/") }
+            .filter { $0.type == .download || $0.type == .skip }
             .map { $0.message }
 
         guard !downloadPaths.isEmpty else {

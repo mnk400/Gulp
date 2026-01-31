@@ -52,6 +52,14 @@ struct DownloadView: View {
         return historyManager.runs.first { $0.id == id }
     }
 
+    private var progressSummary: String {
+        let total = uiState.downloadedCount + uiState.skippedCount
+        if uiState.skippedCount > 0 {
+            return "\(total) files (\(uiState.skippedCount) skipped)"
+        }
+        return "\(total) files"
+    }
+
     private var downloadedFiles: [String] {
         guard let run = completedRun else { return [] }
         return run.logs
@@ -134,18 +142,14 @@ struct DownloadView: View {
 
                         Spacer()
 
-                        if uiState.totalCount > 0 {
-                            Text("\(uiState.downloadedCount) of \(uiState.totalCount)")
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                        } else if uiState.downloadedCount > 0 {
-                            Text("\(uiState.downloadedCount) files")
+                        if uiState.downloadedCount > 0 || uiState.skippedCount > 0 {
+                            Text(progressSummary)
                                 .font(.caption)
                                 .foregroundStyle(.secondary)
                         }
                     }
 
-                    ProgressView(value: uiState.totalCount > 0 ? uiState.progress : nil)
+                    ProgressView()
                         .progressViewStyle(.linear)
 
                     if !uiState.currentFile.isEmpty {

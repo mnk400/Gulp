@@ -40,6 +40,7 @@ protocol DownloadRunning {
 class GalleryDLRunner: DownloadRunning {
     private var currentProcess: Process?
     private var outputPipe: Pipe?
+    private var readTask: Task<Void, any Error>?
     private var currentRun: DownloadRun?
 
     static let possiblePaths = [
@@ -115,8 +116,8 @@ class GalleryDLRunner: DownloadRunning {
         // Handle output asynchronously
         let handle = pipe.fileHandleForReading
 
-        // Read output in background
-        Task.detached { [weak self] in
+        // Read output in background — store the task so we can await it before processing results
+        readTask = Task.detached { [weak self] in
             for try await line in handle.bytes.lines {
                 await self?.parseOutput(line: line, uiState: uiState, historyManager: historyManager)
             }
@@ -125,13 +126,18 @@ class GalleryDLRunner: DownloadRunning {
         return try await withCheckedThrowingContinuation { continuation in
             process.terminationHandler = { [weak self] proc in
                 Task { @MainActor in
+                    // Wait for pipe reader to drain all output before processing results.
+                    // On cancel, the pipe's read end is closed which unblocks this.
+                    _ = try? await self?.readTask?.value
+                    self?.readTask = nil
+
                     self?.currentProcess = nil
                     self?.outputPipe = nil
                     uiState.isDownloading = false
 
                     // Update run status
                     if var run = self?.currentRun {
-                        run.fileCount = uiState.downloadedCount
+                        run.fileCount = uiState.downloadedCount + uiState.skippedCount
 
                         let wasCancelled = self?.isCancelling ?? false
                         self?.isCancelling = false
@@ -143,11 +149,19 @@ class GalleryDLRunner: DownloadRunning {
                             continuation.resume(throwing: GalleryDLError.cancelled)
                         } else if proc.terminationStatus == 0 {
                             run.status = .completed
-                            run.addLog("Download completed: \(uiState.downloadedCount) files", type: .info)
+                            let downloaded = uiState.downloadedCount
+                            let skipped = uiState.skippedCount
+                            if skipped > 0 && downloaded == 0 {
+                                run.addLog("Download completed: \(skipped) files skipped (already downloaded)", type: .info)
+                            } else if skipped > 0 {
+                                run.addLog("Download completed: \(downloaded) files (\(skipped) skipped)", type: .info)
+                            } else {
+                                run.addLog("Download completed: \(downloaded) files", type: .info)
+                            }
                             historyManager.updateRun(run)
 
                             if settings.showNotifications {
-                                self?.sendCompletionNotification(count: uiState.downloadedCount)
+                                self?.sendCompletionNotification(count: downloaded)
                             }
                             continuation.resume()
                         } else {
@@ -172,6 +186,10 @@ class GalleryDLRunner: DownloadRunning {
 
             do {
                 try process.run()
+                // Close the parent's copy of the write end — only the child needs it.
+                // Without this, the pipe reader won't get EOF when the child exits
+                // because the parent still holds the write end open.
+                pipe.fileHandleForWriting.closeFile()
                 uiState.lastActivityTime = Date()
             } catch {
                 uiState.isDownloading = false
@@ -190,6 +208,12 @@ class GalleryDLRunner: DownloadRunning {
     func cancel() {
         guard let process = currentProcess, process.isRunning else { return }
         isCancelling = true
+        readTask?.cancel()
+        // Close the pipe to ensure the reader gets EOF after the process is killed.
+        // The write end may already be closed (after process.run()), but closeFile is
+        // idempotent. Closing the read end breaks any blocked read() syscall.
+        outputPipe?.fileHandleForWriting.closeFile()
+        outputPipe?.fileHandleForReading.closeFile()
         let pid = process.processIdentifier
         // Kill the process group so child processes (e.g. yt-dlp) are also terminated
         kill(-pid, SIGINT)
@@ -216,50 +240,47 @@ class GalleryDLRunner: DownloadRunning {
             let trimmedLine = cleanedLine.trimmingCharacters(in: .whitespacesAndNewlines)
             guard !trimmedLine.isEmpty else { return }
 
+            // Classify the line type:
+            // - Starts with "/" → downloaded file path (stdout in PipeOutput mode)
+            // - Starts with "# /" → skipped file path
+            // - Starts with "[" and contains error → error from extractor (stderr)
+            // - Starts with "[" and contains warning → warning from extractor
+            // - Everything else → info
+            let logType: LogType = {
+                if trimmedLine.hasPrefix("/") { return .download }
+                if trimmedLine.hasPrefix("# /") { return .skip }
+                let lower = trimmedLine.lowercased()
+                if trimmedLine.hasPrefix("[") {
+                    if lower.contains("error") { return .error }
+                    if lower.contains("warning") { return .warning }
+                }
+                return .info
+            }()
+
             // Add to current run's logs
             if var run = currentRun {
-                let logType: LogType = {
-                    if trimmedLine.lowercased().contains("error") { return .error }
-                    if trimmedLine.lowercased().contains("warning") { return .warning }
-                    if trimmedLine.contains("/") { return .download }
-                    return .info
-                }()
                 run.addLog(trimmedLine, type: logType)
                 currentRun = run
                 historyManager.updateRun(run)
             }
 
-            // Check for error messages
-            if trimmedLine.lowercased().contains("error") || trimmedLine.lowercased().contains("failed") {
+            // Capture error messages — only for genuine errors, keep the first one
+            if logType == .error && uiState.errorMessage == nil {
                 uiState.errorMessage = trimmedLine
-                return
             }
 
-            // Try to extract filename from output
-            if trimmedLine.contains("/") && !trimmedLine.hasPrefix("#") {
+            // Track downloaded files
+            if logType == .download {
                 let components = trimmedLine.components(separatedBy: "/")
                 if let filename = components.last, !filename.isEmpty {
-                    uiState.currentFile = filename.trimmingCharacters(in: .whitespacesAndNewlines)
-                    uiState.downloadedCount += 1
-
-                    if uiState.totalCount > 0 {
-                        uiState.progress = Double(uiState.downloadedCount) / Double(uiState.totalCount)
-                    }
+                    uiState.currentFile = filename
                 }
+                uiState.downloadedCount += 1
             }
 
-            // Try to parse count patterns like "[1/10]"
-            if let match = trimmedLine.range(of: #"\[(\d+)/(\d+)\]"#, options: .regularExpression) {
-                let matchStr = String(trimmedLine[match])
-                let numbers = matchStr.filter { $0.isNumber || $0 == "/" }
-                let parts = numbers.split(separator: "/")
-                if parts.count == 2,
-                   let current = Int(parts[0]),
-                   let total = Int(parts[1]) {
-                    uiState.downloadedCount = current
-                    uiState.totalCount = total
-                    uiState.progress = Double(current) / Double(total)
-                }
+            // Track skipped files
+            if logType == .skip {
+                uiState.skippedCount += 1
             }
         }
     }

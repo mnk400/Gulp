@@ -232,6 +232,7 @@ struct LogEntryRow: View {
         switch entry.type {
         case .info: return .gray
         case .download: return .primary
+        case .skip: return .secondary
         case .error: return .red
         case .warning: return .orange
         }
