@@ -21,6 +21,7 @@ struct GulpApp: App {
     @State private var uiState = UIState()
     @State private var settings = UserSettings()
     @State private var historyManager = HistoryManager()
+    @State private var runner = GalleryDLRunner()
 
     init() {
         // Ensure config exists on launch
@@ -36,6 +37,7 @@ struct GulpApp: App {
                 .environment(uiState)
                 .environment(settings)
                 .environment(historyManager)
+                .environment(runner)
         }
         .windowResizability(.contentMinSize)
         .defaultSize(width: 800, height: 500)

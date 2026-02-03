@@ -37,6 +37,7 @@ protocol DownloadRunning {
 // MARK: - Implementation
 
 @MainActor
+@Observable
 class GalleryDLRunner: DownloadRunning {
     private var currentProcess: Process?
     private var outputPipe: Pipe?
@@ -206,21 +207,78 @@ class GalleryDLRunner: DownloadRunning {
     private var isCancelling = false
 
     func cancel() {
-        guard let process = currentProcess, process.isRunning else { return }
+        guard let process = currentProcess, process.isRunning else {
+            print("[Cancel] No running process to cancel")
+            return
+        }
+
+        let pid = process.processIdentifier
+        print("[Cancel] Cancel requested for PID: \(pid)")
+
         isCancelling = true
         readTask?.cancel()
+
         // Close the pipe to ensure the reader gets EOF after the process is killed.
         // The write end may already be closed (after process.run()), but closeFile is
         // idempotent. Closing the read end breaks any blocked read() syscall.
         outputPipe?.fileHandleForWriting.closeFile()
         outputPipe?.fileHandleForReading.closeFile()
-        let pid = process.processIdentifier
-        // Kill the process group so child processes (e.g. yt-dlp) are also terminated
-        kill(-pid, SIGINT)
-        DispatchQueue.global().asyncAfter(deadline: .now() + 3) {
-            if process.isRunning {
-                kill(-pid, SIGKILL)
-            }
+        print("[Cancel] Pipes closed")
+
+        // Force kill the entire process tree spawned by this app
+        Task.detached {
+            Self.killProcessTree(rootPid: pid)
+        }
+    }
+
+    /// Recursively kills a process and all its descendants with SIGKILL
+    private nonisolated static func killProcessTree(rootPid: Int32) {
+        print("[Cancel] Starting kill of process tree for root PID: \(rootPid)")
+
+        // First, find all descendant PIDs
+        var allPids: [Int32] = []
+        findDescendants(of: rootPid, into: &allPids)
+
+        print("[Cancel] Found \(allPids.count) descendant(s): \(allPids)")
+
+        // Kill descendants first (children before parent ensures orphans don't escape)
+        for pid in allPids.reversed() {
+            let result = kill(pid, SIGKILL)
+            print("[Cancel] Killed descendant PID \(pid), result: \(result == 0 ? "success" : "failed (errno: \(errno))")")
+        }
+
+        // Finally kill the root process
+        let result = kill(rootPid, SIGKILL)
+        print("[Cancel] Killed root PID \(rootPid), result: \(result == 0 ? "success" : "failed (errno: \(errno))")")
+        print("[Cancel] Process tree kill completed")
+    }
+
+    /// Recursively finds all descendant process IDs of a given parent
+    private nonisolated static func findDescendants(of parentPid: Int32, into pids: inout [Int32]) {
+        print("[Cancel] Finding children of PID \(parentPid)")
+
+        let pgrep = Process()
+        pgrep.executableURL = URL(fileURLWithPath: "/usr/bin/pgrep")
+        pgrep.arguments = ["-P", String(parentPid)]
+        let pipe = Pipe()
+        pgrep.standardOutput = pipe
+        pgrep.standardError = FileHandle.nullDevice
+        try? pgrep.run()
+        pgrep.waitUntilExit()
+
+        let data = pipe.fileHandleForReading.readDataToEndOfFile()
+        guard let output = String(data: data, encoding: .utf8), !output.isEmpty else {
+            print("[Cancel] No children found for PID \(parentPid)")
+            return
+        }
+
+        let childPids = output.split(separator: "\n").compactMap { Int32($0.trimmingCharacters(in: .whitespaces)) }
+        print("[Cancel] PID \(parentPid) has children: \(childPids)")
+
+        for childPid in childPids {
+            pids.append(childPid)
+            // Recursively find grandchildren
+            findDescendants(of: childPid, into: &pids)
         }
     }
 

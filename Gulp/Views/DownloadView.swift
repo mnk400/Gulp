@@ -11,8 +11,8 @@ struct DownloadView: View {
     @Environment(UIState.self) private var uiState
     @Environment(UserSettings.self) private var settings
     @Environment(HistoryManager.self) private var historyManager
+    @Environment(GalleryDLRunner.self) private var runner
     @Binding var selection: NavigationItem?
-    @State private var runner = GalleryDLRunner()
     @State private var showError = false
     @State private var errorMessage = ""
     @State private var errorRunId: UUID?
@@ -302,4 +302,5 @@ struct DownloadView: View {
         .environment(UIState())
         .environment(UserSettings())
         .environment(HistoryManager())
+        .environment(GalleryDLRunner())
 }
