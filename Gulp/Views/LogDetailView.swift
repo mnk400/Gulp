@@ -10,6 +10,7 @@ struct LogDetailView: View {
     let run: DownloadRun
     @Binding var selection: NavigationItem?
     @Environment(UIState.self) private var uiState
+    @State private var showCopied = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -49,6 +50,22 @@ struct LogDetailView: View {
                             .tint(.orange)
                             .controlSize(.regular)
                         }
+
+                        Button {
+                            copyLogs()
+                            showCopied = true
+                            DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
+                                showCopied = false
+                            }
+                        } label: {
+                            Label(showCopied ? "Copied!" : "Copy Logs",
+                                  systemImage: showCopied ? "checkmark" : "doc.on.doc")
+                        }
+                        .buttonStyle(.glass)
+                        .buttonBorderShape(.capsule)
+                        .tint(.gray)
+                        .controlSize(.regular)
+                        .animation(.easeInOut(duration: 0.15), value: showCopied)
 
                         Button {
                             openInFinder()
@@ -151,6 +168,14 @@ struct LogDetailView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(.background)
+    }
+
+    private func copyLogs() {
+        let text = run.logs
+            .map { "[\($0.timestamp.formatted(date: .omitted, time: .standard))] \($0.message)" }
+            .joined(separator: "\n")
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(text, forType: .string)
     }
 
     private func openInFinder() {
