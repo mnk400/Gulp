@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.1.11] - 2026-02-08
+
+### Changes
+- feat: Copy logs button in LogsView
+- feat: Keyboard delete support for history sidebar
+- fix(cancellation): More intense process cancellation, and fixing a bug where processes didn't cancel after switching views
+
+
 ## [0.1.10] - 2026-01-31
 
 ### Changes
