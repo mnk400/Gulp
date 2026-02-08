@@ -15,6 +15,7 @@ struct SidebarView: View {
     @Environment(HistoryManager.self) private var historyManager
     @Environment(\.openSettings) private var openSettings
     @Binding var selection: NavigationItem?
+    @State private var runPendingDeletion: DownloadRun?
 
     var body: some View {
         VStack(spacing: 0) {
@@ -54,7 +55,7 @@ struct SidebarView: View {
                                             Divider()
 
                                             Button(role: .destructive) {
-                                                historyManager.deleteRun(run)
+                                                runPendingDeletion = run
                                             } label: {
                                                 Label("Delete", systemImage: "trash")
                                             }
@@ -66,6 +67,37 @@ struct SidebarView: View {
                 }
             }
             .listStyle(.sidebar)
+            .onDeleteCommand {
+                guard case .run(let id) = selection,
+                      let run = historyManager.runs.first(where: { $0.id == id }) else { return }
+                runPendingDeletion = run
+            }
+            .alert("Delete Run?",
+                   isPresented: Binding(
+                       get: { runPendingDeletion != nil },
+                       set: { if !$0 { runPendingDeletion = nil } }
+                   )
+            ) {
+                Button("Delete") {
+                    guard let run = runPendingDeletion,
+                          let index = historyManager.runs.firstIndex(where: { $0.id == run.id }) else { return }
+                    let nextSelection: NavigationItem
+                    if historyManager.runs.count <= 1 {
+                        nextSelection = .download
+                    } else if index + 1 < historyManager.runs.count {
+                        nextSelection = .run(historyManager.runs[index + 1].id)
+                    } else {
+                        nextSelection = .run(historyManager.runs[index - 1].id)
+                    }
+                    historyManager.deleteRun(run)
+                    selection = nextSelection
+                }
+                Button("Cancel", role: .cancel) {}
+            } message: {
+                if let run = runPendingDeletion {
+                    Text("Are you sure you want to delete \"\(run.displayName)\"?")
+                }
+            }
 
             Divider()
 
