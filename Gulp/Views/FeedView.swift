@@ -28,9 +28,10 @@ struct FeedView: View {
 
     private let activityTimer = Timer.publish(every: 2, on: .main, in: .common).autoconnect()
 
-    // Leaves room for the traffic lights, which AppKit draws over our content
-    // once the title bar is hidden.
-    private let lightsInset: CGFloat = 78
+    // Leaves room for the traffic lights, which AppKit draws over our content once
+    // the title bar is hidden. The cluster is inset by (barHeight - 12) / 2 = 26 on
+    // both axes so the corner reads evenly, then spans 52pt, then a 12pt gap.
+    private let lightsInset: CGFloat = 90
 
     var body: some View {
         @Bindable var uiState = uiState
@@ -43,7 +44,7 @@ struct FeedView: View {
             footer
         }
         .ignoresSafeArea(.container, edges: .top)
-        .background(.ultraThinMaterial)
+        .containerBackground(.ultraThinMaterial, for: .window)
         .background(WindowConfigurator(barHeight: 64))
         .onReceive(activityTimer) { _ in updateStallMessage() }
         // Re-read on focus so a link copied while Gulp is already open still gets offered.
@@ -209,6 +210,7 @@ struct FeedView: View {
         }
         .padding(.horizontal, 16)
         .frame(height: 38)
+        .background(.quaternary.opacity(0.25))
     }
 
     private var displayPath: String {
@@ -336,11 +338,17 @@ private struct WindowConfigurator: NSViewRepresentable {
         titlebar.superview?.wantsLayer = true
         titlebar.superview?.layer?.masksToBounds = false
 
+        // Inset equally from the top and leading edges. Shifting by a delta rather
+        // than assigning absolute x keeps the cluster's own spacing intact and makes
+        // repeated calls idempotent.
+        let inset = (barHeight - close.frame.height) / 2
+        let dx = inset - close.frame.origin.x
+        let y = titlebar.frame.height - barHeight / 2 - close.frame.height / 2
+
         for button in [close,
                        window.standardWindowButton(.miniaturizeButton),
                        window.standardWindowButton(.zoomButton)].compactMap({ $0 }) {
-            let y = titlebar.frame.height - barHeight / 2 - button.frame.height / 2
-            button.setFrameOrigin(NSPoint(x: button.frame.origin.x, y: y))
+            button.setFrameOrigin(NSPoint(x: button.frame.origin.x + dx, y: y))
         }
     }
 }
