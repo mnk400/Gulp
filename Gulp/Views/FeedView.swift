@@ -24,6 +24,7 @@ struct FeedView: View {
 
     @State private var selection: UUID?
     @State private var expandedLogs: Set<UUID> = []
+    @State private var scrollTarget: UUID?
     @State private var stallMessage: String?
     @State private var clipboardSuggestion: String?
     @State private var showSettings = false
@@ -179,6 +180,13 @@ struct FeedView: View {
                 .onChange(of: selection) { _, id in
                     guard let id else { return }
                     withAnimation(.easeOut(duration: 0.12)) { proxy.scrollTo(id) }
+                }
+                // An expanding log on a low row would otherwise push its own
+                // guidance links out of sight.
+                .onChange(of: scrollTarget) { _, id in
+                    guard let id else { return }
+                    withAnimation(.easeOut(duration: 0.18)) { proxy.scrollTo(id, anchor: .bottom) }
+                    scrollTarget = nil
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -465,6 +473,7 @@ struct FeedView: View {
             expandedLogs.remove(run.id)
         } else {
             expandedLogs.insert(run.id)
+            scrollTarget = run.id
         }
     }
 

@@ -7,6 +7,7 @@
 //
 
 import SwiftUI
+import AppKit
 
 /// Live values for the active run, pulled from `UIState`. Nil for settled rows.
 struct LiveStats {
@@ -161,21 +162,48 @@ struct RunRowView: View {
     // MARK: - Inline log (failed runs only)
 
     private var logBlock: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 2) {
-                ForEach(run.logs) { entry in
-                    Text(entry.message)
-                        .font(.system(size: 10.5, design: .monospaced))
-                        .foregroundStyle(logColor(entry.type))
-                        .textSelection(.enabled)
-                        .frame(maxWidth: .infinity, alignment: .leading)
+        VStack(alignment: .leading, spacing: 8) {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 2) {
+                    ForEach(run.logs) { entry in
+                        Text(entry.message)
+                            .font(.system(size: 10.5, design: .monospaced))
+                            .foregroundStyle(logColor(entry.type))
+                            .textSelection(.enabled)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                }
+                .padding(9)
+            }
+            .frame(maxHeight: 132)
+            .background(.quaternary.opacity(0.4), in: RoundedRectangle(cornerRadius: 8))
+
+            // Most failures are authentication, not bugs, so the row points at the
+            // three things that actually resolve them.
+            Text("Most failures are authentication. gallery-dl may need cookies, an OAuth token, or credentials for this site.")
+                .font(.system(size: 11))
+                .foregroundStyle(.tertiary)
+                .fixedSize(horizontal: false, vertical: true)
+
+            HStack(spacing: 14) {
+                Button("Open config") { ConfigManager.openInEditor() }
+                Button("Configuration guide") {
+                    open("https://github.com/mikf/gallery-dl/blob/master/docs/configuration.rst")
+                }
+                Button("Supported sites") {
+                    open("https://github.com/mikf/gallery-dl/blob/master/docs/supportedsites.md")
                 }
             }
-            .padding(9)
+            .font(.system(size: 11))
+            .buttonStyle(.plain)
+            .foregroundStyle(Color.accentColor)
         }
-        .frame(maxHeight: 132)
-        .background(.quaternary.opacity(0.4), in: RoundedRectangle(cornerRadius: 8))
         .padding(.top, 6)
+    }
+
+    private func open(_ string: String) {
+        guard let url = URL(string: string) else { return }
+        NSWorkspace.shared.open(url)
     }
 
     private func logColor(_ type: LogType) -> Color {

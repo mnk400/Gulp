@@ -53,10 +53,6 @@ struct GulpApp: App {
         }
 
         #if os(macOS)
-        Settings {
-            SettingsView()
-        }
-
         Window("About Gulp", id: "about") {
             AboutView()
         }

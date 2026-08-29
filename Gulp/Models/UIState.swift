@@ -27,13 +27,6 @@ class UIState {
     var bytesPerSecond: Double = 0
     private var rateSamples: [(time: Date, bytes: Int64)] = []
 
-    // Completed state (persists across view switches)
-    var showCompleted: Bool = false
-    var completedRunId: UUID?
-
-    // Retry/auto-start trigger
-    var shouldAutoStart: Bool = false
-
     /// Records bytes that just landed on disk and updates the transfer rate.
     func recordBytes(_ bytes: Int64) {
         totalBytes += bytes

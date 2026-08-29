@@ -9,7 +9,6 @@ import Foundation
 
 protocol HistoryManaging {
     var runs: [DownloadRun] { get }
-    var groupedByDate: [(String, [DownloadRun])] { get }
     func addRun(_ run: DownloadRun)
     func updateRun(_ run: DownloadRun)
     func deleteRun(_ run: DownloadRun)
@@ -68,39 +67,6 @@ class HistoryManager: HistoryManaging {
     func clearHistory() {
         runs.removeAll()
         save()
-    }
-
-    // MARK: - Grouped Access
-
-    var groupedByDate: [(String, [DownloadRun])] {
-        let calendar = Calendar.current
-        let now = Date()
-
-        var today: [DownloadRun] = []
-        var yesterday: [DownloadRun] = []
-        var thisWeek: [DownloadRun] = []
-        var older: [DownloadRun] = []
-
-        for run in runs {
-            if calendar.isDateInToday(run.timestamp) {
-                today.append(run)
-            } else if calendar.isDateInYesterday(run.timestamp) {
-                yesterday.append(run)
-            } else if let weekAgo = calendar.date(byAdding: .day, value: -7, to: now),
-                      run.timestamp > weekAgo {
-                thisWeek.append(run)
-            } else {
-                older.append(run)
-            }
-        }
-
-        var groups: [(String, [DownloadRun])] = []
-        if !today.isEmpty { groups.append(("Today", today)) }
-        if !yesterday.isEmpty { groups.append(("Yesterday", yesterday)) }
-        if !thisWeek.isEmpty { groups.append(("This Week", thisWeek)) }
-        if !older.isEmpty { groups.append(("Older", older)) }
-
-        return groups
     }
 
     // MARK: - Persistence
