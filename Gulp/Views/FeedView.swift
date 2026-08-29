@@ -15,12 +15,18 @@ struct FeedView: View {
     @Environment(UserSettings.self) private var settings
     @Environment(HistoryManager.self) private var historyManager
     @Environment(GalleryDLRunner.self) private var runner
-    @Environment(\.openSettings) private var openSettings
+    @Environment(\.openWindow) private var openWindow
+
+    @AppStorage("skipExisting") private var skipExisting = true
+    @AppStorage("saveMetadata") private var saveMetadata = false
+    @AppStorage("showNotifications") private var showNotifications = true
+    @AppStorage("outputDirectory") private var outputDirectoryPath = ""
 
     @State private var selection: UUID?
     @State private var expandedLogs: Set<UUID> = []
     @State private var stallMessage: String?
     @State private var clipboardSuggestion: String?
+    @State private var showSettings = false
     @State private var showError = false
     @State private var errorMessage = ""
 
@@ -230,21 +236,108 @@ struct FeedView: View {
                 .foregroundStyle(.secondary)
             }
             .buttonStyle(.plain)
+            .help("Open the destination folder")
 
             Spacer()
 
             Button {
-                openSettings()
+                showSettings.toggle()
             } label: {
                 Image(systemName: "gearshape")
                     .font(.system(size: 13))
                     .foregroundStyle(.secondary)
             }
             .buttonStyle(.plain)
+            .popover(isPresented: $showSettings, arrowEdge: .top) {
+                settingsPopover
+            }
         }
         .padding(.horizontal, 16)
         .frame(height: 38)
         .background(.quaternary.opacity(0.25))
+    }
+
+    /// Four preferences and two links, which is all the old Settings scene held.
+    private var settingsPopover: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            Text("Downloads")
+                .font(.system(size: 10, weight: .semibold))
+                .kerning(0.6)
+                .textCase(.uppercase)
+                .foregroundStyle(.tertiary)
+                .padding(.bottom, 6)
+
+            VStack(spacing: 7) {
+                settingToggle("Skip existing files", $skipExisting)
+                settingToggle("Save metadata", $saveMetadata)
+                settingToggle("Notify when finished", $showNotifications)
+            }
+
+            Divider().padding(.vertical, 9)
+
+            popoverButton("Choose destination…") { chooseDestination() }
+            popoverButton("Edit gallery-dl config…") { ConfigManager.openInEditor() }
+
+            Divider().padding(.vertical, 9)
+
+            HStack(spacing: 6) {
+                Image(systemName: GalleryDLRunner.findExecutable() == nil
+                      ? "xmark.circle.fill" : "checkmark.circle.fill")
+                    .foregroundStyle(GalleryDLRunner.findExecutable() == nil ? .red : .green)
+                Text(GalleryDLRunner.findExecutable() == nil
+                     ? "gallery-dl not found — brew install gallery-dl"
+                     : "gallery-dl installed")
+                    .foregroundStyle(.secondary)
+            }
+            .font(.system(size: 11))
+
+            Divider().padding(.vertical, 9)
+
+            popoverButton("About Gulp") {
+                showSettings = false
+                openWindow(id: "about")
+            }
+        }
+        .toggleStyle(.switch)
+        .controlSize(.small)
+        .font(.system(size: 12.5))
+        .padding(14)
+        .frame(width: 262)
+    }
+
+    /// Switch-style toggles right-align their own label outside a Form, so the row
+    /// is laid out explicitly instead.
+    private func settingToggle(_ title: String, _ isOn: Binding<Bool>) -> some View {
+        HStack(spacing: 12) {
+            Text(title)
+            Spacer(minLength: 0)
+            Toggle("", isOn: isOn).labelsHidden()
+        }
+    }
+
+    private func popoverButton(_ title: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Text(title)
+                .font(.system(size: 12.5))
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .padding(.vertical, 3)
+    }
+
+    private func chooseDestination() {
+        let panel = NSOpenPanel()
+        panel.canChooseFiles = false
+        panel.canChooseDirectories = true
+        panel.canCreateDirectories = true
+        panel.allowsMultipleSelection = false
+        panel.message = "Choose where to save downloads"
+        panel.directoryURL = settings.outputDirectory
+
+        if panel.runModal() == .OK, let url = panel.url {
+            outputDirectoryPath = url.path
+        }
     }
 
     private var displayPath: String {
