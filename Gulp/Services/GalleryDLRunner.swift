@@ -315,9 +315,19 @@ class GalleryDLRunner: DownloadRunning {
                 return .info
             }()
 
+            // gallery-dl doesn't report file sizes, so measure what just landed on disk.
+            var addedBytes: Int64 = 0
+            if logType == .download {
+                let attributes = try? FileManager.default.attributesOfItem(atPath: trimmedLine)
+                addedBytes = (attributes?[.size] as? NSNumber)?.int64Value ?? 0
+            }
+
             // Add to current run's logs
             if var run = currentRun {
                 run.addLog(trimmedLine, type: logType)
+                if addedBytes > 0 {
+                    run.totalBytes = (run.totalBytes ?? 0) + addedBytes
+                }
                 currentRun = run
                 historyManager.updateRun(run)
             }
@@ -334,6 +344,9 @@ class GalleryDLRunner: DownloadRunning {
                     uiState.currentFile = filename
                 }
                 uiState.downloadedCount += 1
+                if addedBytes > 0 {
+                    uiState.recordBytes(addedBytes)
+                }
             }
 
             // Track skipped files

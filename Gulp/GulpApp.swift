@@ -33,14 +33,18 @@ struct GulpApp: App {
 
     var body: some Scene {
         WindowGroup {
-            MainView()
+            FeedView()
+                .frame(minWidth: 460, minHeight: 380)
                 .environment(uiState)
                 .environment(settings)
                 .environment(historyManager)
                 .environment(runner)
         }
+        // The input bar is the title bar, so the title strip is hidden and the
+        // traffic lights sit over the bar's leading inset.
+        .windowStyle(.hiddenTitleBar)
         .windowResizability(.contentMinSize)
-        .defaultSize(width: 800, height: 500)
+        .defaultSize(width: 620, height: 620)
         .commands {
             CommandGroup(replacing: .newItem) { }
             CommandGroup(replacing: .appInfo) {

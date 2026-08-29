@@ -43,6 +43,11 @@ struct DownloadRun: Identifiable, Codable {
     var fileCount: Int
     var logs: [LogEntry]
 
+    /// Total bytes written by this run. Optional so history recorded before sizes were
+    /// tracked still decodes — synthesized Codable skips missing keys for optionals,
+    /// which is why this needs no schema version bump.
+    var totalBytes: Int64?
+
     init(url: String, outputDirectory: String) {
         self.id = UUID()
         self.url = url
@@ -72,6 +77,26 @@ struct DownloadRun: Identifiable, Codable {
         guard let urlObj = URL(string: url),
               let host = urlObj.host else { return "" }
         return host
+    }
+
+    /// The name of what was downloaded, taken from the folder gallery-dl actually wrote to.
+    /// Falls back to the URL when the run produced no folder of its own — `actualDownloadDirectory`
+    /// returns `outputDirectory` for runs that wrote nothing, which would otherwise title every
+    /// failed run after the base directory.
+    ///
+    /// No attempt is made to tell an opaque ID from a real name: there is no syntactic difference
+    /// between the two (`nasa` and `x8Kd2` are both plausible usernames), so any heuristic
+    /// mislabels real data in both directions. A bare ID is never worse than showing the domain.
+    var title: String {
+        let directory = actualDownloadDirectory
+        guard directory != outputDirectory else { return url }
+        return URL(fileURLWithPath: directory).lastPathComponent
+    }
+
+    /// Formatted total size, or nil for runs recorded before sizes were tracked.
+    var sizeText: String? {
+        guard let totalBytes, totalBytes > 0 else { return nil }
+        return ByteCountFormatter.string(fromByteCount: totalBytes, countStyle: .file)
     }
 
     var statusColor: String {
