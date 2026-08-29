@@ -44,13 +44,16 @@ struct FeedView: View {
     var body: some View {
         @Bindable var uiState = uiState
 
-        VStack(spacing: 0) {
-            inputBar(uiState: uiState)
-            Divider()
-            feed
-            Divider()
-            footer
+        GlassEffectContainer(spacing: 18) {
+            VStack(spacing: 0) {
+                inputBar(uiState: uiState)
+                Divider()
+                feed
+                Divider()
+                footer
+            }
         }
+        .animation(.spring(response: 0.42, dampingFraction: 0.82), value: uiState.isDownloading)
         // A window can't spend Escape on dismissal the way a panel can, so it
         // unwinds the field and then the selection instead.
         .onExitCommand {

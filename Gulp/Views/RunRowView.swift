@@ -69,6 +69,7 @@ struct RunRowView: View {
             RoundedRectangle(cornerRadius: 9)
                 .fill(isSelected ? Color.accentColor.opacity(isFocused ? 0.20 : 0.09) : .clear)
         }
+        .modifier(ActiveGlass(isActive: live != nil))
         .contentShape(Rectangle())
     }
 
@@ -212,6 +213,21 @@ struct RunRowView: View {
         case .warning: return .orange
         case .download: return .primary
         default: return .secondary
+        }
+    }
+}
+
+
+/// Only the run that's actually running is made of glass; settled rows are flat.
+/// The effect marks what's alive rather than decorating the list.
+struct ActiveGlass: ViewModifier {
+    let isActive: Bool
+
+    func body(content: Content) -> some View {
+        if isActive {
+            content.glassEffect(.regular, in: .rect(cornerRadius: 11))
+        } else {
+            content
         }
     }
 }
