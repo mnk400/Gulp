@@ -24,7 +24,8 @@ struct FeedView: View {
     @State private var showError = false
     @State private var errorMessage = ""
 
-    @FocusState private var fieldFocused: Bool
+    private enum Focus { case field, feed }
+    @FocusState private var focus: Focus?
 
     private let activityTimer = Timer.publish(every: 2, on: .main, in: .common).autoconnect()
 
@@ -42,6 +43,17 @@ struct FeedView: View {
             feed
             Divider()
             footer
+        }
+        // A window can't spend Escape on dismissal the way a panel can, so it
+        // unwinds the field and then the selection instead.
+        .onExitCommand {
+            if !uiState.url.isEmpty {
+                uiState.url = ""
+            } else if selection != nil {
+                selection = nil
+            } else {
+                focus = .field
+            }
         }
         .ignoresSafeArea(.container, edges: .top)
         .containerBackground(.ultraThinMaterial, for: .window)
@@ -83,8 +95,14 @@ struct FeedView: View {
                 TextField("", text: $uiState.url)
                     .textFieldStyle(.plain)
                     .font(.system(size: 15.5))
-                    .focused($fieldFocused)
+                    .focused($focus, equals: .field)
                     .onSubmit(startDownload)
+                    .onKeyPress(.downArrow) {
+                        guard let first = historyManager.runs.first else { return .ignored }
+                        if selection == nil { selection = first.id }
+                        focus = .feed
+                        return .handled
+                    }
             }
         }
         .padding(.leading, lightsInset)
@@ -128,24 +146,40 @@ struct FeedView: View {
         if historyManager.runs.isEmpty {
             emptyState
         } else {
-            ScrollView {
-                LazyVStack(spacing: 0) {
-                    ForEach(historyManager.runs) { run in
-                        RunRowView(
-                            run: run,
-                            live: liveStats(for: run),
-                            isSelected: selection == run.id,
-                            isLogExpanded: expandedLogs.contains(run.id),
-                            onToggleLog: { toggleLog(run) },
-                            onRetry: { retry(run) }
-                        )
-                        .onTapGesture { selection = run.id }
+            ScrollViewReader { proxy in
+                ScrollView {
+                    LazyVStack(spacing: 0) {
+                        ForEach(historyManager.runs) { run in
+                            RunRowView(
+                                run: run,
+                                live: liveStats(for: run),
+                                isSelected: selection == run.id,
+                                isFocused: focus == .feed,
+                                isLogExpanded: expandedLogs.contains(run.id),
+                                onToggleLog: { toggleLog(run) },
+                                onRetry: { retry(run) }
+                            )
+                            .id(run.id)
+                            .onTapGesture {
+                                selection = run.id
+                                focus = .feed
+                            }
+                            .contextMenu { menu(for: run) }
+                        }
                     }
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 6)
                 }
-                .padding(.horizontal, 8)
-                .padding(.vertical, 6)
+                .onChange(of: selection) { _, id in
+                    guard let id else { return }
+                    withAnimation(.easeOut(duration: 0.12)) { proxy.scrollTo(id) }
+                }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .focusable()
+            .focusEffectDisabled()
+            .focused($focus, equals: .feed)
+            .onKeyPress(phases: .down) { press in handle(press) }
         }
     }
 
@@ -217,6 +251,120 @@ struct FeedView: View {
         settings.outputDirectory.path.replacingOccurrences(of: NSHomeDirectory(), with: "~")
     }
 
+    // MARK: - Keyboard
+
+    private func handle(_ press: KeyPress) -> KeyPress.Result {
+        if press.modifiers.contains(.command) {
+            guard press.characters == "c", let run = selectedRun else { return .ignored }
+            copyURL(run)
+            return .handled
+        }
+
+        switch press.key {
+        case .upArrow:
+            // Leaving the top of the list hands focus back to the field.
+            if selection == historyManager.runs.first?.id {
+                selection = nil
+                focus = .field
+            } else {
+                moveSelection(by: -1)
+            }
+            return .handled
+
+        case .downArrow:
+            moveSelection(by: 1)
+            return .handled
+
+        case .space:
+            if let run = selectedRun { quickLook(run) }
+            return .handled
+
+        case .return:
+            if let run = selectedRun { revealInFinder(run) }
+            return .handled
+
+        case .delete, .deleteForward:
+            if let run = selectedRun { delete(run) }
+            return .handled
+
+        default:
+            return .ignored
+        }
+    }
+
+    private var selectedRun: DownloadRun? {
+        historyManager.runs.first { $0.id == selection }
+    }
+
+    private func moveSelection(by offset: Int) {
+        let runs = historyManager.runs
+        guard !runs.isEmpty else { return }
+        guard let current = runs.firstIndex(where: { $0.id == selection }) else {
+            selection = runs.first?.id
+            return
+        }
+        let next = min(runs.count - 1, max(0, current + offset))
+        selection = runs[next].id
+    }
+
+    // MARK: - Row commands
+
+    @ViewBuilder
+    private func menu(for run: DownloadRun) -> some View {
+        Button("Quick Look") { quickLook(run) }
+        Button("Open in Finder") { revealInFinder(run) }
+        Button("Copy Link") { copyURL(run) }
+        if run.status == .failed {
+            Button("Retry") { retry(run) }
+        }
+        Button("Copy Logs") { copyLogs(run) }
+        Divider()
+        Button("Delete", role: .destructive) { delete(run) }
+    }
+
+    private func quickLook(_ run: DownloadRun) {
+        if !QuickLookController.shared.present(run) {
+            errorMessage = "Nothing to preview — this run's files are no longer on disk."
+            showError = true
+        }
+    }
+
+    private func revealInFinder(_ run: DownloadRun) {
+        let directory = URL(fileURLWithPath: run.actualDownloadDirectory)
+        let target = FileManager.default.fileExists(atPath: directory.path)
+            ? directory
+            : URL(fileURLWithPath: run.outputDirectory)
+        NSWorkspace.shared.open(target)
+    }
+
+    private func copyURL(_ run: DownloadRun) {
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(run.url, forType: .string)
+    }
+
+    private func copyLogs(_ run: DownloadRun) {
+        let text = run.logs
+            .map { "[\($0.timestamp.formatted(date: .omitted, time: .standard))] \($0.message)" }
+            .joined(separator: "\n")
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(text, forType: .string)
+    }
+
+    private func delete(_ run: DownloadRun) {
+        let runs = historyManager.runs
+        let index = runs.firstIndex { $0.id == run.id }
+        historyManager.deleteRun(run)
+        expandedLogs.remove(run.id)
+
+        // Keep the selection on a neighbour so the list stays keyboard-navigable.
+        let remaining = historyManager.runs
+        if let index, !remaining.isEmpty {
+            selection = remaining[min(index, remaining.count - 1)].id
+        } else {
+            selection = nil
+        }
+    }
+
     // MARK: - Actions
 
     private func toggleLog(_ run: DownloadRun) {
@@ -229,7 +377,6 @@ struct FeedView: View {
 
     private func retry(_ run: DownloadRun) {
         uiState.url = run.url
-        fieldFocused = true
         startDownload()
     }
 

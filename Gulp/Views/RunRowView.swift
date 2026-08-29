@@ -22,6 +22,7 @@ struct RunRowView: View {
     let run: DownloadRun
     let live: LiveStats?
     let isSelected: Bool
+    let isFocused: Bool
     let isLogExpanded: Bool
     let onToggleLog: () -> Void
     let onRetry: () -> Void
@@ -65,7 +66,7 @@ struct RunRowView: View {
         .padding(.vertical, 8)
         .background {
             RoundedRectangle(cornerRadius: 9)
-                .fill(isSelected ? Color.accentColor.opacity(0.18) : .clear)
+                .fill(isSelected ? Color.accentColor.opacity(isFocused ? 0.20 : 0.09) : .clear)
         }
         .contentShape(Rectangle())
     }
