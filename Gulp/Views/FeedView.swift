@@ -167,19 +167,28 @@ struct FeedView: View {
                                 isFocused: focus == .feed,
                                 isLogExpanded: expandedLogs.contains(run.id),
                                 onToggleLog: { toggleLog(run) },
-                                onRetry: { retry(run) }
+                                onRetry: { retry(run) },
+                                onStop: { runner.cancel() },
+                                onSelect: { select(run) },
+                                onOpen: { revealInFinder(run) }
                             )
                             .id(run.id)
-                            .onTapGesture {
-                                selection = run.id
-                                focus = .feed
-                            }
+                            // Clicks outside the row's own lines (around an open log)
+                            // still select it.
+                            .onTapGesture { select(run) }
                             .contextMenu { menu(for: run) }
                         }
                     }
                     .padding(.horizontal, 8)
                     .padding(.vertical, 6)
+                    // Keyed on the count: the body re-runs for every line gallery-dl
+                    // prints, and an id array would be rebuilt on each of them.
+                    .animation(.snappy(duration: 0.3), value: historyManager.runs.count)
+                    .animation(.snappy(duration: 0.25), value: expandedLogs)
                 }
+                // With the bars floating over the feed, the scroll view otherwise
+                // opens partway down the list.
+                .defaultScrollAnchor(.top)
                 .onChange(of: selection) { _, id in
                     guard let id else { return }
                     withAnimation(.easeOut(duration: 0.12)) { proxy.scrollTo(id) }
@@ -228,7 +237,7 @@ struct FeedView: View {
             sizeText: uiState.totalBytes > 0
                 ? ByteCountFormatter.string(fromByteCount: uiState.totalBytes, countStyle: .file)
                 : nil,
-            rateText: uiState.rateText,
+            rateText: uiState.bytesPerSecond > 0 ? uiState.rateText : nil,
             currentFile: uiState.currentFile,
             stallMessage: stallMessage
         )
@@ -432,10 +441,15 @@ struct FeedView: View {
         Button("Copy Link") { copyURL(run) }
         if run.status == .failed {
             Button("Retry") { retry(run) }
+            Button(expandedLogs.contains(run.id) ? "Hide Log" : "Show Log") { toggleLog(run) }
         }
         Button("Copy Logs") { copyLogs(run) }
         Divider()
-        Button("Delete", role: .destructive) { delete(run) }
+        if isLive(run) {
+            Button("Stop Download") { runner.cancel() }
+        } else {
+            Button("Delete", role: .destructive) { delete(run) }
+        }
     }
 
     private func quickLook(_ run: DownloadRun) {
@@ -466,7 +480,23 @@ struct FeedView: View {
         NSPasteboard.general.setString(text, forType: .string)
     }
 
+    private func isLive(_ run: DownloadRun) -> Bool {
+        uiState.isDownloading && uiState.currentRunId == run.id
+    }
+
+    private func select(_ run: DownloadRun) {
+        selection = run.id
+        focus = .feed
+    }
+
     private func delete(_ run: DownloadRun) {
+        // Deleting the live row would hide a download that keeps running with no
+        // row left to stop it from. Stopping comes first.
+        guard !isLive(run) else {
+            NSSound.beep()
+            return
+        }
+
         let runs = historyManager.runs
         let index = runs.firstIndex { $0.id == run.id }
         historyManager.deleteRun(run)

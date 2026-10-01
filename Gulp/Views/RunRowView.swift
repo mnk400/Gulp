@@ -14,9 +14,15 @@ struct LiveStats {
     let fileCount: Int
     let skippedCount: Int
     let sizeText: String?
-    let rateText: String
+    /// Nil until bytes have actually moved, so the row never claims "Zero KB/s".
+    let rateText: String?
     let currentFile: String
     let stallMessage: String?
+
+    /// Downloaded plus skipped, the same total a settled row shows, so the count
+    /// doesn't jump when the run finishes — and a re-run that skips everything
+    /// still visibly progresses instead of reading "starting" throughout.
+    var totalCount: Int { fileCount + skippedCount }
 }
 
 struct RunRowView: View {
@@ -27,20 +33,77 @@ struct RunRowView: View {
     let isLogExpanded: Bool
     let onToggleLog: () -> Void
     let onRetry: () -> Void
+    let onStop: () -> Void
+    let onSelect: () -> Void
+    let onOpen: () -> Void
+
+    @State private var isHovered = false
 
     private var isFailed: Bool { run.status == .failed }
 
+    /// A focused selection is drawn in the system's selection colour, and every
+    /// tint in the row gives way to white on it, as in Finder and Mail.
+    private var isEmphasized: Bool { isSelected && isFocused }
+
+    private let cornerRadius: CGFloat = 10
+
     var body: some View {
-        HStack(alignment: .top, spacing: 9) {
-            FaviconView(domain: run.faviconDomain)
+        VStack(alignment: .leading, spacing: 0) {
+            header
+                .contentShape(Rectangle())
+                .onTapGesture {
+                    onSelect()
+                    // Reads the click count instead of adding a double-tap gesture,
+                    // which would delay every single click. It covers only the
+                    // row's own lines, so double-clicks in the log (selecting text)
+                    // or on its buttons never open Finder.
+                    if NSApp.currentEvent?.clickCount == 2 { onOpen() }
+                }
+
+            if isFailed && isLogExpanded {
+                logBlock
+                    // Aligned under the title: favicon width plus the gap.
+                    .padding(.leading, 26)
+                    .transition(.opacity.combined(with: .offset(y: -4)))
+            }
+        }
+        .padding(.horizontal, 11)
+        .padding(.vertical, 8)
+        .background {
+            RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                .fill(backgroundFill)
+        }
+        .modifier(ActiveGlass(isActive: live != nil, cornerRadius: cornerRadius))
+        .contentShape(Rectangle())
+        .onHover { isHovered = $0 }
+        .animation(.easeOut(duration: 0.12), value: isHovered)
+        // Retry and Log only appear under the pointer, which assistive tech
+        // never provides, so they're offered as actions on the row itself.
+        .accessibilityElement(children: .combine)
+        .accessibilityActions {
+            if isFailed {
+                Button("Retry", action: onRetry)
+                Button(isLogExpanded ? "Hide Log" : "Show Log", action: onToggleLog)
+            }
+            if live != nil {
+                Button("Stop Download", action: onStop)
+            }
+        }
+    }
+
+    private var header: some View {
+        HStack(alignment: .top, spacing: 10) {
+            FaviconView(domain: run.faviconDomain, isOnSelection: isEmphasized)
                 .padding(.top, 1)
 
-            VStack(alignment: .leading, spacing: 2) {
+            VStack(alignment: .leading, spacing: 3) {
                 HStack(alignment: .firstTextBaseline, spacing: 10) {
                     Text(run.title)
                         .font(.system(size: 13, weight: .semibold))
+                        .foregroundStyle(isEmphasized ? AnyShapeStyle(.white) : AnyShapeStyle(.primary))
                         .lineLimit(1)
                         .truncationMode(.middle)
+                        .help(run.url)
 
                     Spacer(minLength: 0)
 
@@ -52,25 +115,35 @@ struct RunRowView: View {
                 if let live, live.stallMessage == nil, !live.currentFile.isEmpty {
                     Text("↓ \(live.currentFile)")
                         .font(.system(size: 11, design: .monospaced))
-                        .foregroundStyle(.tertiary)
+                        .foregroundStyle(meta)
                         .lineLimit(1)
                         .truncationMode(.middle)
-                        .padding(.top, 1)
-                }
-
-                if isFailed && isLogExpanded {
-                    logBlock
+                        .contentTransition(.opacity)
+                        .transition(.opacity)
                 }
             }
         }
-        .padding(.horizontal, 11)
-        .padding(.vertical, 8)
-        .background {
-            RoundedRectangle(cornerRadius: 9)
-                .fill(isSelected ? Color.accentColor.opacity(isFocused ? 0.20 : 0.09) : .clear)
-        }
-        .modifier(ActiveGlass(isActive: live != nil))
-        .contentShape(Rectangle())
+    }
+
+    private var backgroundFill: Color {
+        if isEmphasized { return Color(nsColor: .selectedContentBackgroundColor) }
+        if isSelected { return Color(nsColor: .unemphasizedSelectedContentBackgroundColor) }
+        if isHovered { return .primary.opacity(0.045) }
+        return .clear
+    }
+
+    // MARK: - Styles that yield to the selection
+
+    private var meta: AnyShapeStyle {
+        isEmphasized ? AnyShapeStyle(.white.opacity(0.72)) : AnyShapeStyle(.tertiary)
+    }
+
+    private var numbers: AnyShapeStyle {
+        isEmphasized ? AnyShapeStyle(.white.opacity(0.85)) : AnyShapeStyle(.secondary)
+    }
+
+    private func tint(_ color: Color) -> Color {
+        isEmphasized ? .white : color
     }
 
     // MARK: - Line 1 trailing
@@ -80,15 +153,40 @@ struct RunRowView: View {
         if isFailed {
             Text("Failed")
                 .font(.system(size: 12, weight: .medium))
-                .foregroundStyle(.red)
-        } else {
-            let count = live?.fileCount ?? run.fileCount
-            let size = live?.sizeText ?? run.sizeText
-            Text(size.map { "\(fileLabel(count)) · \($0)" } ?? fileLabel(count))
+                .foregroundStyle(tint(.red))
+        } else if let live {
+            HStack(spacing: 8) {
+                if live.totalCount > 0 {
+                    counts(live.totalCount, size: live.sizeText)
+                }
+                Button(action: onStop) {
+                    Image(systemName: "stop.circle.fill")
+                        .font(.system(size: 14))
+                        .symbolRenderingMode(.hierarchical)
+                        .foregroundStyle(numbers)
+                        .frame(width: 18, height: 18)
+                        .contentShape(Circle().inset(by: -6))
+                }
+                .buttonStyle(PressableButtonStyle())
+                .help("Stop download (⌘.)")
+                .accessibilityLabel("Stop download")
+            }
+        } else if run.status == .cancelled && run.fileCount == 0 {
+            Text("Cancelled")
                 .font(.system(size: 12))
-                .monospacedDigit()
-                .foregroundStyle(.secondary)
+                .foregroundStyle(meta)
+        } else {
+            counts(run.fileCount, size: run.sizeText)
         }
+    }
+
+    private func counts(_ count: Int, size: String?) -> some View {
+        Text(size.map { "\(fileLabel(count)) · \($0)" } ?? fileLabel(count))
+            .font(.system(size: 12))
+            .monospacedDigit()
+            .foregroundStyle(numbers)
+            .contentTransition(.numericText(value: Double(count)))
+            .animation(.snappy(duration: 0.25), value: count)
     }
 
     private func fileLabel(_ n: Int) -> String {
@@ -100,106 +198,124 @@ struct RunRowView: View {
     @ViewBuilder
     private var subtitle: some View {
         if let live {
-            HStack(spacing: 5) {
-                Circle()
-                    .fill(live.stallMessage == nil ? Color.accentColor : .orange)
-                    .frame(width: 5, height: 5)
-
-                if let stall = live.stallMessage {
-                    Text("\(run.displayName) · ")
-                        .foregroundStyle(.tertiary)
-                    + Text(stall)
-                        .foregroundStyle(.orange)
-                        .fontWeight(.medium)
-                } else {
-                    Text("\(run.displayName) · ")
-                        .foregroundStyle(.tertiary)
-                    + Text("downloading")
-                        .foregroundStyle(Color.accentColor)
-                        .fontWeight(.medium)
-                    + Text(" · \(live.rateText)")
-                        .foregroundStyle(.tertiary)
-                }
-            }
-            .font(.system(size: 12))
-            .lineLimit(1)
+            liveSubtitle(live)
         } else if isFailed {
-            HStack(spacing: 12) {
-                Text(failureSummary)
-                    .foregroundStyle(.red)
-                    .lineLimit(1)
-                    .truncationMode(.tail)
-
-                Spacer(minLength: 0)
-
-                Button("Retry", action: onRetry)
-                    .buttonStyle(.plain)
-                    .foregroundStyle(Color.accentColor)
-                Button(isLogExpanded ? "Hide log" : "Log", action: onToggleLog)
-                    .buttonStyle(.plain)
-                    .foregroundStyle(Color.accentColor)
-            }
-            .font(.system(size: 12))
+            failedSubtitle
         } else {
-            Text(settledSubtitle)
-                .font(.system(size: 12))
-                .foregroundStyle(.tertiary)
-                .lineLimit(1)
+            // Relative times go stale while the window sits open, so they tick.
+            TimelineView(.periodic(from: .now, by: 30)) { context in
+                Text(settledSubtitle(now: context.date))
+                    .font(.system(size: 12))
+                    .foregroundStyle(meta)
+                    .lineLimit(1)
+            }
         }
     }
 
-    private var settledSubtitle: String {
-        var parts = [run.displayName, run.timestamp.formatted(.relative(presentation: .numeric))]
-        if run.status == .cancelled { parts.append("cancelled") }
-        return parts.joined(separator: " · ")
+    private func liveSubtitle(_ live: LiveStats) -> some View {
+        let state: (text: String, color: Color) = {
+            if let stall = live.stallMessage { return (stall, .orange) }
+            if live.totalCount == 0 && live.currentFile.isEmpty { return ("starting", .accentColor) }
+            return ("downloading", .accentColor)
+        }()
+        let rate = live.stallMessage == nil ? live.rateText.map { " · \($0)" } ?? "" : ""
+
+        return HStack(spacing: 6) {
+            PulseDot(color: tint(state.color))
+            Text("\(run.displayName) · \(Text(state.text).foregroundStyle(tint(state.color)).fontWeight(.medium))\(rate)")
+                .foregroundStyle(meta)
+                .monospacedDigit()
+        }
+        .font(.system(size: 12))
+        .lineLimit(1)
     }
 
-    /// First error line from the run's own logs, so the row explains itself
-    /// without needing a separate detail view.
-    private var failureSummary: String {
-        run.logs.last { $0.type == .error }?.message ?? "Download failed"
+    private var failedSubtitle: some View {
+        // Actions stay out of the way until the row is pointed at, so a list with
+        // a few failures doesn't turn into a column of blue links.
+        let showsActions = isHovered || isSelected || isLogExpanded
+
+        return HStack(spacing: 12) {
+            Text(run.failureSummary)
+                .foregroundStyle(isEmphasized ? AnyShapeStyle(.white.opacity(0.85)) : AnyShapeStyle(.red.opacity(0.9)))
+                .lineLimit(1)
+                .truncationMode(.tail)
+                .help(run.failureSummary)
+
+            Spacer(minLength: 0)
+
+            HStack(spacing: 12) {
+                Button("Retry", action: onRetry)
+                Button(isLogExpanded ? "Hide Log" : "Log", action: onToggleLog)
+            }
+            .buttonStyle(PressableButtonStyle())
+            .fontWeight(.medium)
+            .foregroundStyle(tint(.accentColor))
+            .opacity(showsActions ? 1 : 0)
+            .allowsHitTesting(showsActions)
+        }
+        .font(.system(size: 12))
+    }
+
+    private func settledSubtitle(now: Date) -> String {
+        let age = now.timeIntervalSince(run.timestamp)
+        let when = age < 60 ? "just now" : run.timestamp.formatted(.relative(presentation: .numeric))
+
+        var parts = [run.displayName, when]
+        let skipped = run.skippedCount
+        if skipped > 0 { parts.append("\(skipped) skipped") }
+        // A cancelled run with nothing saved already says so on the right.
+        if run.status == .cancelled && run.fileCount > 0 { parts.append("cancelled") }
+        return parts.joined(separator: " · ")
     }
 
     // MARK: - Inline log (failed runs only)
 
     private var logBlock: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: 9) {
             ScrollView {
                 VStack(alignment: .leading, spacing: 2) {
                     ForEach(run.logs) { entry in
-                        Text(entry.message)
+                        Text("\(Text(entry.timestamp, format: .dateTime.hour(.twoDigits(amPM: .omitted)).minute().second()).foregroundStyle(.tertiary))  \(Text(entry.message).foregroundStyle(logColor(entry.type)))")
                             .font(.system(size: 10.5, design: .monospaced))
-                            .foregroundStyle(logColor(entry.type))
+                            .lineSpacing(2)
                             .textSelection(.enabled)
                             .frame(maxWidth: .infinity, alignment: .leading)
                     }
                 }
-                .padding(9)
+                .padding(.horizontal, 10)
+                .padding(.vertical, 8)
             }
             .frame(maxHeight: 132)
-            .background(.quaternary.opacity(0.4), in: RoundedRectangle(cornerRadius: 8))
+            .background(.background.opacity(0.35), in: RoundedRectangle(cornerRadius: 7, style: .continuous))
+            .overlay {
+                RoundedRectangle(cornerRadius: 7, style: .continuous)
+                    .strokeBorder(.primary.opacity(0.08), lineWidth: 0.5)
+            }
 
             // Most failures are authentication, not bugs, so the row points at the
-            // three things that actually resolve them.
-            Text("Most failures are authentication. gallery-dl may need cookies, an OAuth token, or credentials for this site.")
+            // three things that actually resolve them — phrased conditionally,
+            // since this sits under every failure, dropped connections included.
+            Text("If this site needs a login, gallery-dl may need cookies, an OAuth token, or credentials in its config.")
                 .font(.system(size: 11))
-                .foregroundStyle(.tertiary)
+                .foregroundStyle(meta)
                 .fixedSize(horizontal: false, vertical: true)
 
             HStack(spacing: 14) {
-                Button("Open config") { ConfigManager.openInEditor() }
-                Button("Configuration guide") {
+                Button("Open Config") { ConfigManager.openInEditor() }
+                Button("Configuration Guide") {
                     open("https://github.com/mikf/gallery-dl/blob/master/docs/configuration.rst")
                 }
-                Button("Supported sites") {
+                Button("Supported Sites") {
                     open("https://github.com/mikf/gallery-dl/blob/master/docs/supportedsites.md")
                 }
             }
-            .font(.system(size: 11))
-            .buttonStyle(.plain)
-            .foregroundStyle(Color.accentColor)
+            .font(.system(size: 11, weight: .medium))
+            .buttonStyle(PressableButtonStyle())
+            .foregroundStyle(tint(.accentColor))
         }
         .padding(.top, 6)
+        .padding(.bottom, 2)
     }
 
     private func open(_ string: String) {
@@ -222,10 +338,11 @@ struct RunRowView: View {
 /// The effect marks what's alive rather than decorating the list.
 struct ActiveGlass: ViewModifier {
     let isActive: Bool
+    let cornerRadius: CGFloat
 
     func body(content: Content) -> some View {
         if isActive {
-            content.glassEffect(.regular, in: .rect(cornerRadius: 11))
+            content.glassEffect(.regular, in: .rect(cornerRadius: cornerRadius))
         } else {
             content
         }

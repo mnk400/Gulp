@@ -46,7 +46,13 @@ struct GulpApp: App {
         .windowResizability(.contentMinSize)
         .defaultSize(width: 620, height: 620)
         .commands {
-            CommandGroup(replacing: .newItem) { }
+            // The live row has a stop button, but a running download should also be
+            // stoppable without finding it in the list.
+            CommandGroup(replacing: .newItem) {
+                Button("Stop Download") { runner.cancel() }
+                    .keyboardShortcut(".", modifiers: .command)
+                    .disabled(!uiState.isDownloading)
+            }
             CommandGroup(replacing: .appInfo) {
                 AboutCommand()
             }
