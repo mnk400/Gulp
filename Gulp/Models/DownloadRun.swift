@@ -112,9 +112,11 @@ struct DownloadRun: Identifiable, Codable {
     /// Returns the deepest common directory from file paths in the logs, or falls back to outputDirectory.
     var actualDownloadDirectory: String {
         // Find all download/skip log entries that contain file paths
+        // Skip lines are logged as gallery-dl prints them, `# /path`. Left on, the
+        // prefix makes a relative path that shares only `/` with real downloads.
         let downloadPaths = logs
             .filter { $0.type == .download || $0.type == .skip }
-            .map { $0.message }
+            .map { $0.message.hasPrefix("# ") ? String($0.message.dropFirst(2)) : $0.message }
 
         guard !downloadPaths.isEmpty else {
             return outputDirectory
