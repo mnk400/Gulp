@@ -143,7 +143,9 @@ class GalleryDLRunner: DownloadRunning {
                         let wasCancelled = self?.isCancelling ?? false
                         self?.isCancelling = false
 
-                        if wasCancelled || proc.terminationStatus == 15 || proc.terminationStatus == 9 {
+                        // A signal, not an exit status: gallery-dl's statuses are a
+                        // bitmask, so 9 (8|1) and 15 are real failures, not kills.
+                        if wasCancelled || proc.terminationReason == .uncaughtSignal {
                             run.status = .cancelled
                             run.addLog("Download cancelled by user", type: .warning)
                             historyManager.updateRun(run)
