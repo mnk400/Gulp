@@ -126,7 +126,22 @@ struct DownloadRun: Identifiable, Codable {
         while text.hasPrefix("["), let close = text.firstIndex(of: "]") {
             text = text[text.index(after: close)...].drop(while: \.isWhitespace)
         }
+        if let http = Self.describe(httpError: text) { return http }
         return text.isEmpty ? message : String(text)
+    }
+
+    /// gallery-dl reports HTTP failures as `HttpError: '403 Forbidden' for 'https://…'`.
+    /// The status is the useful part; the API URL after it means nothing to the reader.
+    private static func describe(httpError text: Substring) -> String? {
+        guard text.hasPrefix("HttpError: '"),
+              let status = text.dropFirst("HttpError: '".count).split(separator: "'").first,
+              let code = Int(status.prefix(3)) else { return nil }
+        switch code {
+        case 401, 403: return "\(status) — this site may need you to log in"
+        case 404, 410: return "\(status) — the page may have been removed"
+        case 429: return "\(status) — too many requests, try again later"
+        default: return "\(status) from the site"
+        }
     }
 
     /// Exit status bits from gallery-dl's `exception.py`, most specific first.
