@@ -563,44 +563,103 @@ struct FeedView: View {
 private struct WindowConfigurator: NSViewRepresentable {
     let barHeight: CGFloat
 
+    func makeCoordinator() -> Coordinator {
+        Coordinator(barHeight: barHeight)
+    }
+
     func makeNSView(context: Context) -> NSView {
         let view = NSView(frame: .zero)
-        DispatchQueue.main.async { configure(view.window) }
+        DispatchQueue.main.async { context.coordinator.attach(to: view.window) }
         return view
     }
 
     func updateNSView(_ nsView: NSView, context: Context) {
-        DispatchQueue.main.async { configure(nsView.window) }
+        DispatchQueue.main.async { context.coordinator.attach(to: nsView.window) }
     }
 
-    private func configure(_ window: NSWindow?) {
-        guard let window else { return }
+    /// AppKit lays the title bar out again on every resize and puts the buttons
+    /// back where it thinks they belong, so moving them once isn't enough: the
+    /// coordinator watches for anything that resets them and moves them back.
+    @MainActor
+    final class Coordinator {
+        private let barHeight: CGFloat
+        private weak var window: NSWindow?
+        nonisolated(unsafe) private var observers: [NSObjectProtocol] = []
 
-        // Lets the whole background drag the window, so the field can keep the bar.
-        window.isMovableByWindowBackground = true
+        init(barHeight: CGFloat) {
+            self.barHeight = barHeight
+        }
 
-        guard let close = window.standardWindowButton(.closeButton),
-              let titlebar = close.superview else { return }
+        deinit {
+            observers.forEach(NotificationCenter.default.removeObserver)
+        }
 
-        // The cluster would otherwise sit centred in the standard 28pt title bar,
-        // near the top of our taller one. Moving it down means a negative y in the
-        // unflipped titlebar view, so that view must stop clipping first.
-        titlebar.wantsLayer = true
-        titlebar.layer?.masksToBounds = false
-        titlebar.superview?.wantsLayer = true
-        titlebar.superview?.layer?.masksToBounds = false
+        func attach(to window: NSWindow?) {
+            guard let window else { return }
+            if window !== self.window {
+                self.window = window
+                observe(window)
+            }
+            // Lets the whole background drag the window, so the field can keep the bar.
+            window.isMovableByWindowBackground = true
+            repositionLights()
+        }
 
-        // Inset equally from the top and leading edges. Shifting by a delta rather
-        // than assigning absolute x keeps the cluster's own spacing intact and makes
-        // repeated calls idempotent.
-        let inset = (barHeight - close.frame.height) / 2
-        let dx = inset - close.frame.origin.x
-        let y = titlebar.frame.height - barHeight / 2 - close.frame.height / 2
+        private func observe(_ window: NSWindow) {
+            observers.forEach(NotificationCenter.default.removeObserver)
+            observers = []
 
-        for button in [close,
-                       window.standardWindowButton(.miniaturizeButton),
-                       window.standardWindowButton(.zoomButton)].compactMap({ $0 }) {
-            button.setFrameOrigin(NSPoint(x: button.frame.origin.x + dx, y: y))
+            // A nil queue runs the handler synchronously as AppKit posts, so a
+            // reset button is moved back before the frame is drawn — an async hop
+            // shows it jumping to the corner and back during a live resize.
+            func watch(_ name: Notification.Name, of object: AnyObject) {
+                observers.append(NotificationCenter.default.addObserver(
+                    forName: name, object: object, queue: nil
+                ) { [weak self] _ in
+                    MainActor.assumeIsolated { self?.repositionLights() }
+                })
+            }
+
+            watch(NSWindow.didResizeNotification, of: window)
+            watch(NSWindow.didExitFullScreenNotification, of: window)
+
+            if let close = window.standardWindowButton(.closeButton) {
+                close.postsFrameChangedNotifications = true
+                watch(NSView.frameDidChangeNotification, of: close)
+            }
+        }
+
+        private func repositionLights() {
+            guard let window,
+                  // Full screen shows the lights in its own reveal strip, which
+                  // our bar's geometry has nothing to do with.
+                  !window.styleMask.contains(.fullScreen),
+                  let close = window.standardWindowButton(.closeButton),
+                  let titlebar = close.superview else { return }
+
+            // The cluster would otherwise sit centred in the standard 28pt title bar,
+            // near the top of our taller one. Moving it down means a negative y in the
+            // unflipped titlebar view, so that view must stop clipping first.
+            titlebar.wantsLayer = true
+            titlebar.layer?.masksToBounds = false
+            titlebar.superview?.wantsLayer = true
+            titlebar.superview?.layer?.masksToBounds = false
+
+            // Inset equally from the top and leading edges. Shifting by a delta rather
+            // than assigning absolute x keeps the cluster's own spacing intact.
+            let inset = (barHeight - close.frame.height) / 2
+            let dx = inset - close.frame.origin.x
+            let y = titlebar.frame.height - barHeight / 2 - close.frame.height / 2
+
+            // Already in place: return before touching any frame, or moving the
+            // close button would re-post the very notification that called this.
+            guard abs(dx) > 0.5 || abs(close.frame.origin.y - y) > 0.5 else { return }
+
+            for button in [close,
+                           window.standardWindowButton(.miniaturizeButton),
+                           window.standardWindowButton(.zoomButton)].compactMap({ $0 }) {
+                button.setFrameOrigin(NSPoint(x: button.frame.origin.x + dx, y: y))
+            }
         }
     }
 }
