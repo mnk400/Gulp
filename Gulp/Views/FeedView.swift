@@ -196,7 +196,9 @@ struct FeedView: View {
             .focusable()
             .focusEffectDisabled()
             .focused($focus, equals: .feed)
-            .onKeyPress(phases: .down) { press in handle(press) }
+            // Holding a key delivers `.repeat`, not `.down`; without it a held
+            // arrow moved one row and stopped.
+            .onKeyPress(phases: [.down, .repeat]) { press in handle(press) }
         }
     }
 
@@ -364,10 +366,20 @@ struct FeedView: View {
             return .handled
         }
 
+        // Only movement repeats. A held Space or Return would reopen Quick Look or
+        // Finder on every tick, and a held Delete would eat the history.
+        let isRepeat = press.phase == .repeat
+        let actsOnce: Set<KeyEquivalent> = [.space, .return, .delete, .deleteForward]
+        if isRepeat && actsOnce.contains(press.key) {
+            return .handled
+        }
+
         switch press.key {
         case .upArrow:
-            // Leaving the top of the list hands focus back to the field.
+            // Leaving the top of the list hands focus back to the field — but only
+            // on a fresh press, so holding the key stops at the first row.
             if selection == historyManager.runs.first?.id {
+                guard !isRepeat else { return .handled }
                 selection = nil
                 focus = .field
             } else {
