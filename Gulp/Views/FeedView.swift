@@ -37,23 +37,23 @@ struct FeedView: View {
     private let activityTimer = Timer.publish(every: 2, on: .main, in: .common).autoconnect()
 
     // Leaves room for the traffic lights, which AppKit draws over our content once
-    // the title bar is hidden. The cluster is inset by (barHeight - 12) / 2 = 26 on
-    // both axes so the corner reads evenly, then spans 52pt, then a 12pt gap.
-    private let lightsInset: CGFloat = 90
+    // the title bar is hidden. The cluster is inset 26pt so the corner reads evenly
+    // and spans ~59pt; the 20pt gap after it has to be clearly wider than the gaps
+    // inside it, or whatever comes next reads as a fourth light.
+    private let lightsInset: CGFloat = 105
 
     var body: some View {
         @Bindable var uiState = uiState
 
-        GlassEffectContainer(spacing: 18) {
-            VStack(spacing: 0) {
-                inputBar(uiState: uiState)
-                Divider()
-                feed
-                Divider()
-                footer
-            }
-        }
-        .animation(.spring(response: 0.42, dampingFraction: 0.82), value: uiState.isDownloading)
+        // The bars sit over the feed rather than beside it, so rows fade out
+        // beneath them through the system's soft scroll-edge effect instead of
+        // meeting a hard divider. At rest nothing is underneath and the window
+        // reads as one surface.
+        feed
+            .safeAreaBar(edge: .top, spacing: 0) { inputBar(uiState: uiState) }
+            .safeAreaBar(edge: .bottom, spacing: 0) { footer }
+            .scrollEdgeEffectStyle(.soft, for: .vertical)
+            .animation(.spring(response: 0.42, dampingFraction: 0.82), value: uiState.isDownloading)
         // A window can't spend Escape on dismissal the way a panel can, so it
         // unwinds the field and then the selection instead.
         .onExitCommand {
@@ -94,10 +94,6 @@ struct FeedView: View {
 
     private func inputBar(@Bindable uiState: UIState) -> some View {
         HStack(spacing: 12) {
-            Image(systemName: "drop")
-                .font(.system(size: 15))
-                .foregroundStyle(.tertiary)
-
             ZStack(alignment: .leading) {
                 if uiState.url.isEmpty {
                     placeholder
@@ -114,7 +110,15 @@ struct FeedView: View {
                         return .handled
                     }
             }
+
+            // Typing replaces the placeholder's offer, so the key that acts on
+            // the field moves to the end of it.
+            if !uiState.url.isEmpty {
+                ReturnKeycap()
+                    .transition(.blurReplace)
+            }
         }
+        .animation(.snappy(duration: 0.2), value: uiState.url.isEmpty)
         .padding(.leading, lightsInset)
         .padding(.trailing, 20)
         .frame(height: 64)
@@ -126,13 +130,8 @@ struct FeedView: View {
     private var placeholder: some View {
         HStack(spacing: 8) {
             if let suggestion = clipboardSuggestion {
-                Text("⏎")
-                    .font(.system(size: 10.5, weight: .semibold))
-                    .padding(.horizontal, 6)
-                    .padding(.vertical, 2)
-                    .background(Color.accentColor.opacity(0.15), in: RoundedRectangle(cornerRadius: 5))
-                    .foregroundStyle(Color.accentColor)
-                Text("to download \(shortened(suggestion))")
+                ReturnKeycap()
+                Text("to download \(Text(shortened(suggestion)).foregroundStyle(.secondary))")
             } else {
                 Text("Paste a gallery or image link…")
             }
@@ -593,6 +592,20 @@ struct FeedView: View {
         } else {
             stallMessage = nil
         }
+    }
+}
+
+/// The key that acts on the field, drawn as a keycap so it reads as a key and
+/// not as text.
+private struct ReturnKeycap: View {
+    var body: some View {
+        Text("⏎")
+            .font(.system(size: 10.5, weight: .semibold))
+            .padding(.horizontal, 6)
+            .padding(.vertical, 2)
+            .background(Color.accentColor.opacity(0.15),
+                        in: RoundedRectangle(cornerRadius: 5, style: .continuous))
+            .foregroundStyle(Color.accentColor)
     }
 }
 
