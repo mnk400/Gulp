@@ -213,6 +213,11 @@ struct FeedView: View {
             // Holding a key delivers `.repeat`, not `.down`; without it a held
             // arrow moved one row and stopped.
             .onKeyPress(phases: [.down, .repeat]) { press in handle(press) }
+            // Backspace arrives as the `deleteBackward:` command, not a key press,
+            // so `onKeyPress` never sees it.
+            .onDeleteCommand {
+                if let run = selectedRun { delete(run) }
+            }
         }
     }
 
