@@ -89,8 +89,57 @@ struct DownloadRun: Identifiable, Codable {
     /// mislabels real data in both directions. A bare ID is never worse than showing the domain.
     var title: String {
         let directory = actualDownloadDirectory
-        guard directory != outputDirectory else { return url }
+        guard directory != outputDirectory else { return bareURL }
         return URL(fileURLWithPath: directory).lastPathComponent
+    }
+
+    /// The URL without the parts every link shares, so a fallback title spends its
+    /// width on what tells runs apart.
+    private var bareURL: String {
+        var bare = url
+        for prefix in ["https://", "http://", "www."] where bare.hasPrefix(prefix) {
+            bare.removeFirst(prefix.count)
+        }
+        return bare.hasSuffix("/") ? String(bare.dropLast()) : bare
+    }
+
+    /// Files that were already on disk. Counted from the logs because only the
+    /// combined `fileCount` is stored.
+    var skippedCount: Int {
+        logs.lazy.filter { $0.type == .skip }.count
+    }
+
+    /// One readable line explaining a failure. gallery-dl's own error lines carry
+    /// `[extractor][error]` prefixes that say nothing to the reader, and the runner's
+    /// fallback only has an exit code, which gallery-dl defines as a bitmask.
+    var failureSummary: String {
+        guard let message = logs.last(where: { $0.type == .error })?.message else {
+            return "Download failed"
+        }
+
+        let exitPrefix = "Download failed with exit code "
+        if message.hasPrefix(exitPrefix), let code = Int(message.dropFirst(exitPrefix.count)) {
+            return Self.describe(exitCode: code)
+        }
+
+        var text = Substring(message)
+        while text.hasPrefix("["), let close = text.firstIndex(of: "]") {
+            text = text[text.index(after: close)...].drop(while: \.isWhitespace)
+        }
+        return text.isEmpty ? message : String(text)
+    }
+
+    /// Exit status bits from gallery-dl's `exception.py`, most specific first.
+    private static func describe(exitCode code: Int) -> String {
+        let reasons: [(bit: Int, text: String)] = [
+            (64, "Unsupported link — no gallery-dl extractor matches it"),
+            (16, "Login required — gallery-dl needs credentials for this site"),
+            (8, "Not found — the page may have been removed"),
+            (4, "The site returned an HTTP error"),
+            (32, "Output format error in the gallery-dl config"),
+            (128, "Couldn't write to the destination folder"),
+        ]
+        return reasons.first { code & $0.bit != 0 }?.text ?? "gallery-dl exited with code \(code)"
     }
 
     /// Formatted total size, or nil for runs recorded before sizes were tracked.
