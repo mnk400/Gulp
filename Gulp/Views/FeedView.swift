@@ -28,6 +28,9 @@ struct FeedView: View {
     @State private var stallMessage: String?
     @State private var clipboardSuggestion: String?
     @State private var showSettings = false
+    /// Cached: the body re-runs for every line gallery-dl prints, and the
+    /// display-name lookup goes to the filesystem.
+    @State private var displayPath = ""
     @State private var showError = false
     @State private var errorMessage = ""
 
@@ -69,6 +72,9 @@ struct FeedView: View {
         .containerBackground(.ultraThinMaterial, for: .window)
         .background(WindowConfigurator(barHeight: 64))
         .onReceive(activityTimer) { _ in updateStallMessage() }
+        .onChange(of: outputDirectoryPath, initial: true) {
+            displayPath = Self.displayPath(for: settings.outputDirectory.path)
+        }
         // Re-read on focus so a link copied while Gulp is already open still gets offered.
         .onReceive(NotificationCenter.default.publisher(for: NSWindow.didBecomeKeyNotification)) { _ in
             readClipboard()
@@ -257,21 +263,28 @@ struct FeedView: View {
     // MARK: - Footer
 
     private var footer: some View {
-        HStack(spacing: 8) {
-            Button {
-                NSWorkspace.shared.open(settings.outputDirectory)
+        HStack(spacing: 4) {
+            Menu {
+                Button("Open in Finder") { NSWorkspace.shared.open(settings.outputDirectory) }
+                Button("Choose Destination…") { chooseDestination() }
             } label: {
                 HStack(spacing: 6) {
                     Image(systemName: "folder")
+                        .font(.system(size: 11))
                     Text(displayPath)
+                        .lineLimit(1)
+                        .truncationMode(.head)
                 }
                 .font(.system(size: 11.5))
                 .foregroundStyle(.secondary)
             }
-            .buttonStyle(.plain)
-            .help("Open the destination folder")
+            .menuStyle(.button)
+            .menuIndicator(.hidden)
+            .buttonStyle(HoverHighlightButtonStyle())
+            .fixedSize(horizontal: false, vertical: true)
+            .help("Downloads are saved here")
 
-            Spacer()
+            Spacer(minLength: 8)
 
             Button {
                 showSettings.toggle()
@@ -280,62 +293,105 @@ struct FeedView: View {
                     .font(.system(size: 13))
                     .foregroundStyle(.secondary)
             }
-            .buttonStyle(.plain)
+            .buttonStyle(HoverHighlightButtonStyle())
+            .help("Settings")
             .popover(isPresented: $showSettings, arrowEdge: .top) {
                 settingsPopover
             }
         }
-        .padding(.horizontal, 16)
+        // The controls carry their own 7pt hover inset, so the edges sit 7pt in
+        // from the ledger's 16pt column.
+        .padding(.horizontal, 9)
         .frame(height: 38)
-        .background(.quaternary.opacity(0.25))
     }
 
     /// Four preferences and two links, which is all the old Settings scene held.
     private var settingsPopover: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            Text("Downloads")
-                .font(.system(size: 10, weight: .semibold))
-                .kerning(0.6)
-                .textCase(.uppercase)
-                .foregroundStyle(.tertiary)
-                .padding(.bottom, 6)
+        let isInstalled = GalleryDLRunner.findExecutable() != nil
 
-            VStack(spacing: 7) {
+        return VStack(alignment: .leading, spacing: 0) {
+            popoverHeader("Downloads")
+
+            VStack(spacing: 8) {
                 settingToggle("Skip existing files", $skipExisting)
                 settingToggle("Save metadata", $saveMetadata)
                 settingToggle("Notify when finished", $showNotifications)
             }
+            .padding(.horizontal, 7)
 
-            Divider().padding(.vertical, 9)
+            popoverDivider
 
-            popoverButton("Choose destination…") { chooseDestination() }
-            popoverButton("Edit gallery-dl config…") { ConfigManager.openInEditor() }
+            popoverHeader("Save to")
 
-            Divider().padding(.vertical, 9)
-
-            HStack(spacing: 6) {
-                Image(systemName: GalleryDLRunner.findExecutable() == nil
-                      ? "xmark.circle.fill" : "checkmark.circle.fill")
-                    .foregroundStyle(GalleryDLRunner.findExecutable() == nil ? .red : .green)
-                Text(GalleryDLRunner.findExecutable() == nil
-                     ? "gallery-dl not found — brew install gallery-dl"
-                     : "gallery-dl installed")
-                    .foregroundStyle(.secondary)
+            Button(action: chooseDestination) {
+                HStack(spacing: 7) {
+                    Image(systemName: "folder.fill")
+                        .foregroundStyle(Color.accentColor)
+                    Text(displayPath)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                    Spacer(minLength: 8)
+                    Text("Change…")
+                        .foregroundStyle(.secondary)
+                }
             }
-            .font(.system(size: 11))
+            .buttonStyle(HoverHighlightButtonStyle(fillsWidth: true))
 
-            Divider().padding(.vertical, 9)
+            popoverDivider
 
-            popoverButton("About Gulp") {
+            HStack(spacing: 7) {
+                Circle()
+                    .fill(isInstalled ? Color.green : .red)
+                    .frame(width: 7, height: 7)
+                Text(isInstalled ? "gallery-dl installed" : "gallery-dl not found")
+                    .foregroundStyle(.secondary)
+                Spacer(minLength: 8)
+                if isInstalled {
+                    Button("Edit Config…") { ConfigManager.openInEditor() }
+                        .buttonStyle(HoverHighlightButtonStyle())
+                        .foregroundStyle(Color.accentColor)
+                        .padding(.trailing, -7)
+                }
+            }
+            .padding(.horizontal, 7)
+            .frame(minHeight: 24)
+
+            if !isInstalled {
+                Text("Install it with `brew install gallery-dl`")
+                    .font(.system(size: 11))
+                    .foregroundStyle(.tertiary)
+                    .padding(.horizontal, 7)
+                    .padding(.top, 2)
+            }
+
+            popoverDivider
+
+            Button("About Gulp") {
                 showSettings = false
                 openWindow(id: "about")
             }
+            .buttonStyle(HoverHighlightButtonStyle(fillsWidth: true))
         }
         .toggleStyle(.switch)
         .controlSize(.small)
         .font(.system(size: 12.5))
-        .padding(14)
-        .frame(width: 262)
+        .padding(9)
+        .frame(width: 300)
+    }
+
+    private func popoverHeader(_ title: String) -> some View {
+        Text(title)
+            .font(.system(size: 11, weight: .semibold))
+            .foregroundStyle(.secondary)
+            .padding(.horizontal, 7)
+            .padding(.top, 2)
+            .padding(.bottom, 7)
+    }
+
+    private var popoverDivider: some View {
+        Divider()
+            .padding(.horizontal, 7)
+            .padding(.vertical, 8)
     }
 
     /// Switch-style toggles right-align their own label outside a Form, so the row
@@ -344,19 +400,8 @@ struct FeedView: View {
         HStack(spacing: 12) {
             Text(title)
             Spacer(minLength: 0)
-            Toggle("", isOn: isOn).labelsHidden()
+            Toggle(title, isOn: isOn).labelsHidden()
         }
-    }
-
-    private func popoverButton(_ title: String, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            Text(title)
-                .font(.system(size: 12.5))
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .padding(.vertical, 3)
     }
 
     private func chooseDestination() {
@@ -373,8 +418,16 @@ struct FeedView: View {
         }
     }
 
-    private var displayPath: String {
-        settings.outputDirectory.path.replacingOccurrences(of: NSHomeDirectory(), with: "~")
+    /// Paths the way Finder names them. iCloud Drive lives under a path nobody
+    /// should have to read (`~/Library/Mobile Documents/com~apple~CloudDocs`), so
+    /// those are shown by display name; everything else keeps the familiar `~/`.
+    private static func displayPath(for path: String) -> String {
+        if path.contains("/Library/Mobile Documents/"),
+           let components = FileManager.default.componentsToDisplay(forPath: path),
+           let drive = components.firstIndex(of: "iCloud Drive") {
+            return components[drive...].joined(separator: " › ")
+        }
+        return path.replacingOccurrences(of: NSHomeDirectory(), with: "~")
     }
 
     // MARK: - Keyboard
