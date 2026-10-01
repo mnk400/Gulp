@@ -552,6 +552,14 @@ struct FeedView: View {
         }
         guard !uiState.url.isEmpty else { return }
 
+        // The runner drives one process at a time: a second run would take over
+        // the first one's counters and leave it orphaned and unstoppable. The
+        // link stays in the field to start once this one is done.
+        guard !uiState.isDownloading else {
+            NSSound.beep()
+            return
+        }
+
         let url = uiState.url
         uiState.url = ""
         clipboardSuggestion = nil
