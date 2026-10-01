@@ -211,19 +211,31 @@ struct FeedView: View {
     }
 
     private var emptyState: some View {
-        VStack(spacing: 10) {
-            Image(systemName: "drop")
-                .font(.system(size: 28))
-                .foregroundStyle(.tertiary)
+        VStack(spacing: 0) {
+            Image(nsImage: NSApp.applicationIconImage)
+                .resizable()
+                .frame(width: 64, height: 64)
+                .padding(.bottom, 14)
             Text("Nothing downloaded yet")
                 .font(.system(size: 14, weight: .semibold))
                 .foregroundStyle(.secondary)
+                .padding(.bottom, 5)
             Text("Paste a gallery or image link above. Anything gallery-dl supports works here.")
                 .font(.system(size: 12.5))
                 .foregroundStyle(.tertiary)
                 .multilineTextAlignment(.center)
-                .frame(maxWidth: 300)
+                .lineSpacing(2)
+                .frame(maxWidth: 280)
+                .padding(.bottom, 10)
+            Button("Supported Sites") {
+                NSWorkspace.shared.open(URL(string: "https://github.com/mikf/gallery-dl/blob/master/docs/supportedsites.md")!)
+            }
+            .buttonStyle(HoverHighlightButtonStyle())
+            .font(.system(size: 12, weight: .medium))
+            .foregroundStyle(Color.accentColor)
         }
+        // Sits a little above centre, where the eye lands in an empty window.
+        .padding(.bottom, 24)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
