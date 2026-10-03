@@ -34,10 +34,24 @@ brew install --cask gulp --no-quarantine
 
 ## Features
 
-- Paste a URL and download with one click
-- View download history and logs
+- Paste a link and press Return. If there's already a link on your clipboard, Gulp offers it.
+- Live progress for the running download: files, total size, transfer rate, and a warning when a site goes quiet
+- Every download in one list, named after what was downloaded rather than the site it came from
+- Failed downloads explain why, with the full gallery-dl log one click away
 - Supports all sites that gallery-dl supports
 - App managed instance of gallery-dl's config.json
+
+## Keyboard
+
+| Key | Action |
+| --- | --- |
+| `↑` `↓` | Move through downloads |
+| `Space` | Quick Look the downloaded files |
+| `Return` | Open the download in Finder |
+| `Delete` | Remove the download from history |
+| `⌘C` | Copy the download's link |
+| `⌘.` | Stop the running download |
+| `Esc` | Clear the field, then the selection |
 
 ## Screenshots
 
