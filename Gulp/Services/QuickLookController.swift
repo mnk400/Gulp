@@ -19,9 +19,7 @@ final class QuickLookController: NSObject {
     /// Files a run put on disk, in the order gallery-dl reported them. Skipped files
     /// are included because they exist too — they were downloaded by an earlier run.
     static func previewableFiles(for run: DownloadRun) -> [URL] {
-        run.logs
-            .filter { $0.type == .download || $0.type == .skip }
-            .map { $0.message.hasPrefix("# ") ? String($0.message.dropFirst(2)) : $0.message }
+        run.filePaths
             .filter { $0.hasPrefix("/") }
             .map { URL(fileURLWithPath: $0) }
             .filter { FileManager.default.fileExists(atPath: $0.path) }

@@ -89,8 +89,15 @@ struct DownloadRun: Identifiable, Codable {
     /// mislabels real data in both directions. A bare ID is never worse than showing the domain.
     var title: String {
         let directory = actualDownloadDirectory
+        let folder = URL(fileURLWithPath: directory).lastPathComponent
         guard directory != outputDirectory else { return bareURL }
-        return URL(fileURLWithPath: directory).lastPathComponent
+        // gallery-dl files every direct image link under one `directlink` folder,
+        // which names nothing. The file's own name does, and the domain is
+        // already on the line below.
+        if folder == "directlink", let name = URL(string: url)?.lastPathComponent, !name.isEmpty, name != "/" {
+            return name
+        }
+        return folder
     }
 
     /// The URL without the parts every link shares, so a fallback title spends its
@@ -202,44 +209,28 @@ struct DownloadRun: Identifiable, Codable {
         }
     }
 
-    /// Determines the actual directory where files were downloaded by parsing log entries.
-    /// Returns the deepest common directory from file paths in the logs, or falls back to outputDirectory.
-    var actualDownloadDirectory: String {
-        // Find all download/skip log entries that contain file paths
-        // Skip lines are logged as gallery-dl prints them, `# /path`. Left on, the
-        // prefix makes a relative path that shares only `/` with real downloads.
-        let downloadPaths = logs
-            .filter { $0.type == .download || $0.type == .skip }
-            .map { $0.message.hasPrefix("# ") ? String($0.message.dropFirst(2)) : $0.message }
-
-        guard !downloadPaths.isEmpty else {
-            return outputDirectory
-        }
-
-        // Extract directory paths (remove filename)
-        let directories = downloadPaths.compactMap { path -> String? in
-            let url = URL(fileURLWithPath: path)
-            return url.deletingLastPathComponent().path
-        }
-
-        guard !directories.isEmpty else {
-            return outputDirectory
-        }
-
-        // Find the deepest common directory
-        // Start with the first directory and find the longest common path
-        var commonPath = directories[0]
-
-        for dir in directories.dropFirst() {
-            while !dir.hasPrefix(commonPath) && !commonPath.isEmpty {
-                // Go up one directory level
-                let url = URL(fileURLWithPath: commonPath)
-                commonPath = url.deletingLastPathComponent().path
+    /// Every file the run saved or found already saved, in the order gallery-dl
+    /// reported them. Skips are logged as gallery-dl prints them, `# /path`.
+    var filePaths: [String] {
+        logs.compactMap { entry in
+            switch entry.type {
+            case .download: entry.message
+            case .skip: entry.message.hasPrefix("# ") ? String(entry.message.dropFirst(2)) : entry.message
+            default: nil
             }
         }
+    }
 
-        // If we found a common path that's more specific than the base output directory, use it
-        // Otherwise fall back to the base output directory
-        return commonPath.isEmpty ? outputDirectory : commonPath
+    /// The deepest folder holding all of the run's files, or the base directory
+    /// when it saved none.
+    var actualDownloadDirectory: String {
+        let folders = filePaths.map { URL(fileURLWithPath: $0).deletingLastPathComponent().pathComponents }
+        guard var common = folders.first else { return outputDirectory }
+        // Compared by component, so `board1` and `board10` don't share a prefix.
+        for components in folders.dropFirst() {
+            common = zip(common, components).prefix { $0 == $1 }.map(\.0)
+        }
+        // Only the root left in common: the files have nothing in common worth naming.
+        return common.count > 1 ? NSString.path(withComponents: common) : outputDirectory
     }
 }
