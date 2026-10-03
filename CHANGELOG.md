@@ -1,5 +1,54 @@
 # Changelog
 
+## [0.2.1] - 2026-10-03
+
+### Changes
+- chore(runner): Make preflight private
+- fix(ui): Move the field to the column edge in full screen
+- docs: Add CLAUDE.md for the redesigned app
+- docs(readme): New screenshot, features, and keyboard shortcuts
+- chore: Version 0.2.0 for the redesign
+- refactor(runner): Start downloads synchronously and settle failed launches
+- chore: Remove unused statusColor and updateBaseDirectory
+- refactor(ui): Leave the destination to the footer
+- refactor(settings): Keep preferences in one observable place
+- fix(ui): Don't blame the server for a long silence
+- fix(model): Title runs by their real common folder, and direct links by file name
+- fix(ui): Stop offering a clipboard link that's already downloaded
+- fix(ui): Trim typed links, and retry without touching the field
+- fix(config): Drop the 1 MB/s download cap from the default config
+- fix(history): Save at most once a second during a run, atomically, and keep unreadable files
+- fix(runner): Stream both pipes as lines arrive
+- feat(ui): Show what a failed run saved, and why a file failed
+- fix(runner): Read stdout and stderr apart and classify log lines by colour
+- fix(ui): Report a missing gallery-dl or unusable folder instead of dropping the link
+- fix(app): Ask before quitting mid-download, and settle interrupted runs
+- fix(runner): Make Skip existing files skip, not overwrite
+- feat(ui): Show field focus through the placeholder and ⏎ offer
+- fix(ui): Translucent unfocused selection, cleared when the field takes focus
+- feat(model): Plain-language HTTP failure reasons
+- fix(ui): Make Delete remove the selected download
+- feat(ui): Finder-style destination and a tidier settings popover
+- feat(ui): Warmer empty state
+- feat(ui): Title bar and footer float over a fading feed
+- fix(ui): Allow one download at a time
+- feat(ui): Refine rows, live state, and stopping a run
+- fix(ui): Let held arrow keys keep moving the selection
+- fix(ui): Keep the traffic lights inset after a resize
+- feat(ui): Shared favicon fetches with a consistent edge
+- chore: Add the AccentColor asset
+- feat(model): Readable failure reasons and bare-URL titles
+- fix(model): Strip the skip prefix before finding a run's folder
+- fix(runner): Only a signal counts as a cancel
+- feat(ui): Glass marks the running row, not the input field
+- refactor(ui): Fold LogDetailView into failed rows and delete the old shell
+- feat(ui): Fold settings into a footer gear popover
+- feat(ui): Selection and the keyboard model
+- fix(ui): Translucent window and evenly inset traffic lights
+- feat(ui): Ledger feed shell replacing the sidebar navigation
+- Updating UI screenshot
+
+
 ## [0.1.11] - 2026-02-08
 
 ### Changes
