@@ -68,6 +68,7 @@ struct GulpApp: App {
     init() {
         // Ensure config exists on launch
         ConfigManager.ensureConfigExists()
+        ConfigManager.removeLegacyRateCap()
 
         // Request notification permissions
         UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound]) { _, _ in }

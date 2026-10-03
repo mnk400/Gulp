@@ -13,17 +13,12 @@ struct ConfigManager {
 
     static let configURL = appSupportDirectory.appendingPathComponent("config.json")
 
+    /// Empty sections to fill in, since gallery-dl's own defaults already suit
+    /// Gulp, and the destination is always passed on the command line.
     static let defaultConfig: [String: Any] = [
-        "extractor": [
-            "base-directory": "~/Downloads/Gallery-DL"
-        ],
-        "output": [
-            "mode": "auto"
-        ],
-        "downloader": [
-            "rate": "1M",
-            "retries": 3
-        ]
+        "#": "Options: https://gdl-org.github.io/docs/configuration.html",
+        "extractor": [String: Any](),
+        "downloader": [String: Any]()
     ]
 
     static func ensureConfigExists() {
@@ -42,11 +37,30 @@ struct ConfigManager {
         // Create default config if it doesn't exist
         if !fileManager.fileExists(atPath: configURL.path) {
             do {
-                let jsonData = try JSONSerialization.data(withJSONObject: defaultConfig, options: [.prettyPrinted, .sortedKeys])
+                let jsonData = try JSONSerialization.data(withJSONObject: defaultConfig, options: [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes])
                 try jsonData.write(to: configURL)
             } catch {
                 print("Failed to create default config: \(error)")
             }
+        }
+    }
+
+    /// Earlier versions wrote a 1 MB/s download cap into the default config.
+    /// It's removed only while it's still exactly that value, so a limit the
+    /// user chose themselves stays.
+    static func removeLegacyRateCap() {
+        guard let data = try? Data(contentsOf: configURL),
+              var config = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              var downloader = config["downloader"] as? [String: Any],
+              downloader["rate"] as? String == "1M" else { return }
+
+        downloader["rate"] = nil
+        config["downloader"] = downloader
+        do {
+            let updated = try JSONSerialization.data(withJSONObject: config, options: [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes])
+            try updated.write(to: configURL, options: .atomic)
+        } catch {
+            print("Failed to update config: \(error)")
         }
     }
 
@@ -66,7 +80,7 @@ struct ConfigManager {
             extractor["base-directory"] = path
             config["extractor"] = extractor
 
-            let updatedData = try JSONSerialization.data(withJSONObject: config, options: [.prettyPrinted, .sortedKeys])
+            let updatedData = try JSONSerialization.data(withJSONObject: config, options: [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes])
             try updatedData.write(to: configURL)
         } catch {
             print("Failed to update config: \(error)")
