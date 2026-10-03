@@ -17,11 +17,6 @@ struct FeedView: View {
     @Environment(GalleryDLRunner.self) private var runner
     @Environment(\.openWindow) private var openWindow
 
-    @AppStorage("skipExisting") private var skipExisting = true
-    @AppStorage("saveMetadata") private var saveMetadata = false
-    @AppStorage("showNotifications") private var showNotifications = true
-    @AppStorage("outputDirectory") private var outputDirectoryPath = ""
-
     @State private var selection: UUID?
     @State private var expandedLogs: Set<UUID> = []
     @State private var scrollTarget: UUID?
@@ -72,7 +67,7 @@ struct FeedView: View {
         .containerBackground(.ultraThinMaterial, for: .window)
         .background(WindowConfigurator(barHeight: 64))
         .onReceive(activityTimer) { _ in updateStallMessage() }
-        .onChange(of: outputDirectoryPath, initial: true) {
+        .onChange(of: settings.outputDirectory, initial: true) {
             displayPath = Self.displayPath(for: settings.outputDirectory.path)
         }
         // Re-read on focus so a link copied while Gulp is already open still gets offered.
@@ -323,15 +318,16 @@ struct FeedView: View {
 
     /// Four preferences and two links, which is all the old Settings scene held.
     private var settingsPopover: some View {
+        @Bindable var settings = settings
         let isInstalled = GalleryDLRunner.findExecutable() != nil
 
         return VStack(alignment: .leading, spacing: 0) {
             popoverHeader("Downloads")
 
             VStack(spacing: 8) {
-                settingToggle("Skip existing files", $skipExisting)
-                settingToggle("Save metadata", $saveMetadata)
-                settingToggle("Notify when finished", $showNotifications)
+                settingToggle("Skip existing files", $settings.skipExisting)
+                settingToggle("Save metadata", $settings.saveMetadata)
+                settingToggle("Notify when finished", $settings.showNotifications)
             }
             .padding(.horizontal, 7)
 
@@ -430,7 +426,7 @@ struct FeedView: View {
         panel.directoryURL = settings.outputDirectory
 
         if panel.runModal() == .OK, let url = panel.url {
-            outputDirectoryPath = url.path
+            settings.outputDirectory = url
         }
     }
 

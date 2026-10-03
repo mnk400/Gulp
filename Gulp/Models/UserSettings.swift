@@ -8,35 +8,35 @@
 import SwiftUI
 import Foundation
 
+/// The one place preferences live. Stored rather than computed, so views that
+/// read them update when they change, and written through to UserDefaults.
 @Observable
 class UserSettings {
-    // Output directory
     var outputDirectory: URL {
-        get {
-            if let savedPath = UserDefaults.standard.string(forKey: "outputDirectory"),
-               !savedPath.isEmpty {
-                return URL(fileURLWithPath: savedPath)
-            }
-            return FileManager.default.urls(for: .downloadsDirectory, in: .userDomainMask)[0]
-        }
-        set {
-            UserDefaults.standard.set(newValue.path, forKey: "outputDirectory")
-        }
+        didSet { UserDefaults.standard.set(outputDirectory.path, forKey: "outputDirectory") }
     }
 
-    // Download options
     var skipExisting: Bool {
-        get { UserDefaults.standard.object(forKey: "skipExisting") as? Bool ?? true }
-        set { UserDefaults.standard.set(newValue, forKey: "skipExisting") }
+        didSet { UserDefaults.standard.set(skipExisting, forKey: "skipExisting") }
     }
 
     var saveMetadata: Bool {
-        get { UserDefaults.standard.object(forKey: "saveMetadata") as? Bool ?? false }
-        set { UserDefaults.standard.set(newValue, forKey: "saveMetadata") }
+        didSet { UserDefaults.standard.set(saveMetadata, forKey: "saveMetadata") }
     }
 
     var showNotifications: Bool {
-        get { UserDefaults.standard.object(forKey: "showNotifications") as? Bool ?? true }
-        set { UserDefaults.standard.set(newValue, forKey: "showNotifications") }
+        didSet { UserDefaults.standard.set(showNotifications, forKey: "showNotifications") }
+    }
+
+    init() {
+        let defaults = UserDefaults.standard
+        if let saved = defaults.string(forKey: "outputDirectory"), !saved.isEmpty {
+            outputDirectory = URL(fileURLWithPath: saved)
+        } else {
+            outputDirectory = FileManager.default.urls(for: .downloadsDirectory, in: .userDomainMask)[0]
+        }
+        skipExisting = defaults.object(forKey: "skipExisting") as? Bool ?? true
+        saveMetadata = defaults.object(forKey: "saveMetadata") as? Bool ?? false
+        showNotifications = defaults.object(forKey: "showNotifications") as? Bool ?? true
     }
 }
