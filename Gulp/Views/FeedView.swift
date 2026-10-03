@@ -136,19 +136,25 @@ struct FeedView: View {
     }
 
     /// When the pasteboard holds a URL the placeholder becomes an offer, which is
-    /// why there's no paste button.
+    /// why there's no paste button. The offer only stands while the field has
+    /// focus, since that's the only time ⏎ will act on it; its arrival, and the
+    /// placeholder brightening, are how the borderless field shows focus.
     @ViewBuilder
     private var placeholder: some View {
+        let isFocused = focus == .field
         HStack(spacing: 8) {
-            if let suggestion = clipboardSuggestion {
+            if isFocused, let suggestion = clipboardSuggestion {
                 ReturnKeycap()
+                    .transition(.blurReplace)
                 Text("to download \(Text(shortened(suggestion)).foregroundStyle(.secondary))")
+                    .foregroundStyle(.tertiary)
             } else {
                 Text("Paste a gallery or image link…")
+                    .foregroundStyle(isFocused ? .secondary : .tertiary)
             }
         }
         .font(.system(size: 15.5))
-        .foregroundStyle(.tertiary)
+        .animation(.snappy(duration: 0.2), value: isFocused)
         .lineLimit(1)
         .allowsHitTesting(false)
     }
