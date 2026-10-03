@@ -38,12 +38,14 @@ struct RunRowView: View {
     let onOpen: () -> Void
 
     @State private var isHovered = false
+    @Environment(\.appearsActive) private var appearsActive
 
     private var isFailed: Bool { run.status == .failed }
 
-    /// A focused selection is drawn in the system's selection colour, and every
-    /// tint in the row gives way to white on it, as in Finder and Mail.
-    private var isEmphasized: Bool { isSelected && isFocused }
+    /// A focused selection in a key window is drawn in the system's selection
+    /// colour, and every tint in the row gives way to white on it, as in Finder
+    /// and Mail.
+    private var isEmphasized: Bool { isSelected && isFocused && appearsActive }
 
     private let cornerRadius: CGFloat = 10
 
@@ -127,7 +129,9 @@ struct RunRowView: View {
 
     private var backgroundFill: Color {
         if isEmphasized { return Color(nsColor: .selectedContentBackgroundColor) }
-        if isSelected { return Color(nsColor: .unemphasizedSelectedContentBackgroundColor) }
+        // The system's unemphasized gray is opaque and made for flat tables; on
+        // the window's material it reads as a slab, so this tints with it instead.
+        if isSelected { return .primary.opacity(0.08) }
         if isHovered { return .primary.opacity(0.045) }
         return .clear
     }

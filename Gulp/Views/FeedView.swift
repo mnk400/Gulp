@@ -79,6 +79,11 @@ struct FeedView: View {
         .onReceive(NotificationCenter.default.publisher(for: NSWindow.didBecomeKeyNotification)) { _ in
             readClipboard()
         }
+        // The field and a selected row are never active together, however focus
+        // arrives — a click here does what ↑ from the top row already does.
+        .onChange(of: focus) { _, focus in
+            if focus == .field { selection = nil }
+        }
         .onChange(of: uiState.isDownloading) { _, isDownloading in
             if !isDownloading { stallMessage = nil }
         }
