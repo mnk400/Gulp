@@ -622,6 +622,14 @@ struct FeedView: View {
               let host = url.host, host.contains(".")
         else { return }
 
+        // The clipboard keeps a link long after it's been used, and the window
+        // re-reads it on every focus. Once it has downloaded, stop offering it;
+        // a link whose last try failed is still worth offering.
+        if let last = historyManager.runs.first(where: { $0.url == raw }),
+           last.status != .failed {
+            return
+        }
+
         clipboardSuggestion = raw
     }
 
