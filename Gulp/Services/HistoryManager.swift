@@ -5,16 +5,6 @@
 
 import Foundation
 
-// MARK: - Protocol
-
-protocol HistoryManaging {
-    var runs: [DownloadRun] { get }
-    func addRun(_ run: DownloadRun)
-    func updateRun(_ run: DownloadRun)
-    func deleteRun(_ run: DownloadRun)
-    func clearHistory()
-}
-
 // MARK: - Schema
 
 private struct HistoryFile: Codable {
@@ -32,7 +22,7 @@ private struct HistoryFile: Codable {
 // MARK: - Implementation
 
 @Observable
-class HistoryManager: HistoryManaging {
+class HistoryManager {
     private(set) var runs: [DownloadRun] = []
     private let maxEntries = 100
     @ObservationIgnored private var pendingSave: Task<Void, Never>?
@@ -75,11 +65,6 @@ class HistoryManager: HistoryManaging {
 
     func deleteRun(_ run: DownloadRun) {
         runs.removeAll { $0.id == run.id }
-        save()
-    }
-
-    func clearHistory() {
-        runs.removeAll()
         save()
     }
 

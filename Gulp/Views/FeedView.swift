@@ -634,21 +634,18 @@ struct FeedView: View {
             return false
         }
 
+        // Only problems that leave no row to report on are thrown; everything
+        // after that, cancelling included, is told on the run's own row.
         do {
-            try GalleryDLRunner.preflight(outputDir: settings.outputDirectory)
+            try runner.run(url: url,
+                           outputDir: settings.outputDirectory,
+                           uiState: uiState,
+                           settings: settings,
+                           historyManager: historyManager)
         } catch {
             errorMessage = error.localizedDescription
             showError = true
             return false
-        }
-
-        Task {
-            // Failures and cancellations are reported on the run's own row.
-            try? await runner.run(url: url,
-                                  outputDir: settings.outputDirectory,
-                                  uiState: uiState,
-                                  settings: settings,
-                                  historyManager: historyManager)
         }
         return true
     }

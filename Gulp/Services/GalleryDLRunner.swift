@@ -6,39 +6,28 @@
 import Foundation
 import UserNotifications
 
-// MARK: - Error Types
+// MARK: - Errors
 
+/// What can stop a download before it has a row to report on.
 enum GalleryDLError: LocalizedError {
     case notInstalled
-    case processError(String)
-    case cancelled
+    case unusableFolder(any Error)
 
     var errorDescription: String? {
         switch self {
         case .notInstalled:
-            return "gallery-dl is not installed. Please install it using: brew install gallery-dl"
-        case .processError(let message):
-            return message
-        case .cancelled:
-            return "Download was cancelled"
+            return "gallery-dl is not installed. Install it with Homebrew: brew install gallery-dl"
+        case .unusableFolder(let error):
+            return "Gulp can't use the download folder. \(error.localizedDescription)"
         }
     }
-}
-
-// MARK: - Protocol
-
-@MainActor
-protocol DownloadRunning {
-    static func findExecutable() -> String?
-    func run(url: String, outputDir: URL, uiState: UIState, settings: UserSettings, historyManager: HistoryManaging) async throws
-    func cancel()
 }
 
 // MARK: - Implementation
 
 @MainActor
 @Observable
-class GalleryDLRunner: DownloadRunning {
+class GalleryDLRunner {
     private var currentProcess: Process?
     private var readers: [PipeLines] = []
     private var readTasks: [Task<Void, Never>] = []
@@ -67,12 +56,14 @@ class GalleryDLRunner: DownloadRunning {
         do {
             try FileManager.default.createDirectory(at: outputDir, withIntermediateDirectories: true)
         } catch {
-            throw GalleryDLError.processError("Gulp can't use the download folder. \(error.localizedDescription)")
+            throw GalleryDLError.unusableFolder(error)
         }
         return path
     }
 
-    func run(url: String, outputDir: URL, uiState: UIState, settings: UserSettings, historyManager: HistoryManaging) async throws {
+    /// Starts a download and returns once gallery-dl is running; the run settles
+    /// itself when gallery-dl exits. Throws only for what `preflight` checks.
+    func run(url: String, outputDir: URL, uiState: UIState, settings: UserSettings, historyManager: HistoryManager) throws {
         let executablePath = try Self.preflight(outputDir: outputDir)
         ConfigManager.ensureConfigExists()
 
@@ -131,93 +122,79 @@ class GalleryDLRunner: DownloadRunning {
             }
         }
 
-        return try await withCheckedThrowingContinuation { continuation in
-            process.terminationHandler = { [weak self] proc in
-                Task { @MainActor in
-                    // Wait for the readers to drain all output before processing results.
-                    // On cancel, the readers are abandoned, which unblocks this.
-                    for task in self?.readTasks ?? [] {
-                        await task.value
-                    }
-                    self?.readTasks = []
-                    self?.readers = []
-
-                    self?.currentProcess = nil
-                    uiState.isDownloading = false
-
-                    // Update run status
-                    if var run = self?.currentRun {
-                        run.fileCount = uiState.downloadedCount + uiState.skippedCount
-
-                        let wasCancelled = self?.isCancelling ?? false
-                        self?.isCancelling = false
-
-                        // A signal, not an exit status: gallery-dl's statuses are a
-                        // bitmask, so 9 (8|1) and 15 are real failures, not kills.
-                        if wasCancelled || proc.terminationReason == .uncaughtSignal {
-                            run.status = .cancelled
-                            run.addLog("Download cancelled by user", type: .warning)
-                            historyManager.updateRun(run)
-                            continuation.resume(throwing: GalleryDLError.cancelled)
-                        } else if proc.terminationStatus == 0 {
-                            run.status = .completed
-                            let downloaded = uiState.downloadedCount
-                            let skipped = uiState.skippedCount
-                            if skipped > 0 && downloaded == 0 {
-                                run.addLog("Download completed: \(skipped) files skipped (already downloaded)", type: .info)
-                            } else if skipped > 0 {
-                                run.addLog("Download completed: \(downloaded) files (\(skipped) skipped)", type: .info)
-                            } else {
-                                run.addLog("Download completed: \(downloaded) files", type: .info)
-                            }
-                            historyManager.updateRun(run)
-
-                            if settings.showNotifications {
-                                self?.sendCompletionNotification(count: downloaded)
-                            }
-                            continuation.resume()
-                        } else {
-                            run.status = .failed
-                            // gallery-dl's own error is already in the log; the exit
-                            // code is only worth recording when it said nothing.
-                            let error = uiState.errorMessage ?? "Download failed with exit code \(proc.terminationStatus)"
-                            if uiState.errorMessage == nil {
-                                run.addLog(error, type: .error)
-                            }
-                            historyManager.updateRun(run)
-                            continuation.resume(throwing: GalleryDLError.processError(error))
-                        }
-
-                        self?.currentRun = nil
-                        uiState.currentRunId = nil
-                    } else {
-                        if proc.terminationStatus == 0 {
-                            continuation.resume()
-                        } else {
-                            continuation.resume(throwing: GalleryDLError.processError("Unknown error"))
-                        }
-                    }
-                }
-            }
-
-            do {
-                try process.run()
-                // Close the parent's copy of the write end — only the child needs it.
-                // Without this, the pipe reader won't get EOF when the child exits
-                // because the parent still holds the write end open.
-                stdout.fileHandleForWriting.closeFile()
-                stderr.fileHandleForWriting.closeFile()
-                uiState.lastActivityTime = Date()
-            } catch {
-                uiState.isDownloading = false
-                if var run = self.currentRun {
-                    run.status = .failed
-                    run.addLog("Failed to start: \(error.localizedDescription)", type: .error)
-                    historyManager.updateRun(run)
-                }
-                continuation.resume(throwing: error)
+        process.terminationHandler = { [weak self] process in
+            Task { @MainActor in
+                await self?.finish(process, uiState: uiState, settings: settings, historyManager: historyManager)
             }
         }
+
+        do {
+            try process.run()
+            // Close the parent's copy of the write ends — only the child needs them.
+            // Without this, the readers never see the pipes end when the child exits.
+            stdout.fileHandleForWriting.closeFile()
+            stderr.fileHandleForWriting.closeFile()
+            uiState.lastActivityTime = Date()
+        } catch {
+            // No process means no termination handler, so the run settles here.
+            readers.forEach { $0.abandon() }
+            readers = []
+            readTasks = []
+            currentProcess = nil
+            currentRun = nil
+            run.status = .failed
+            run.addLog("Failed to start: \(error.localizedDescription)", type: .error)
+            historyManager.updateRun(run)
+            uiState.isDownloading = false
+            uiState.currentRunId = nil
+        }
+    }
+
+    /// Settles the run once gallery-dl has exited and every line it printed is read.
+    private func finish(_ process: Process, uiState: UIState, settings: UserSettings, historyManager: HistoryManager) async {
+        // On cancel, the readers are abandoned, which unblocks this.
+        for task in readTasks {
+            await task.value
+        }
+        readTasks = []
+        readers = []
+        currentProcess = nil
+        uiState.isDownloading = false
+
+        guard var run = currentRun else { return }
+        currentRun = nil
+        uiState.currentRunId = nil
+        run.fileCount = uiState.downloadedCount + uiState.skippedCount
+
+        // A signal, not an exit status: gallery-dl's statuses are a
+        // bitmask, so 9 (8|1) and 15 are real failures, not kills.
+        if isCancelling || process.terminationReason == .uncaughtSignal {
+            run.status = .cancelled
+            run.addLog("Download cancelled by user", type: .warning)
+        } else if process.terminationStatus == 0 {
+            run.status = .completed
+            let downloaded = uiState.downloadedCount
+            let skipped = uiState.skippedCount
+            if skipped > 0 && downloaded == 0 {
+                run.addLog("Download completed: \(skipped) files skipped (already downloaded)", type: .info)
+            } else if skipped > 0 {
+                run.addLog("Download completed: \(downloaded) files (\(skipped) skipped)", type: .info)
+            } else {
+                run.addLog("Download completed: \(downloaded) files", type: .info)
+            }
+            if settings.showNotifications {
+                sendCompletionNotification(count: downloaded)
+            }
+        } else {
+            run.status = .failed
+            // gallery-dl's own error is already in the log; the exit code is
+            // only worth recording when it said nothing.
+            if uiState.errorMessage == nil {
+                run.addLog("Download failed with exit code \(process.terminationStatus)", type: .error)
+            }
+        }
+        isCancelling = false
+        historyManager.updateRun(run)
     }
 
     private var isCancelling = false
@@ -233,20 +210,13 @@ class GalleryDLRunner: DownloadRunning {
     }
 
     func cancel() {
-        guard let process = currentProcess, process.isRunning else {
-            print("[Cancel] No running process to cancel")
-            return
-        }
-
+        guard let process = currentProcess, process.isRunning else { return }
         let pid = process.processIdentifier
-        print("[Cancel] Cancel requested for PID: \(pid)")
-
         isCancelling = true
         // A grandchild that escapes the kill could hold the pipes open forever, so
         // the run settles without waiting for their end.
         readers.forEach { $0.abandon() }
-
-        // Force kill the entire process tree spawned by this app
+        // The whole tree, since gallery-dl can hand work to children of its own.
         Task.detached {
             Self.killProcessTree(rootPid: pid)
         }
@@ -254,29 +224,23 @@ class GalleryDLRunner: DownloadRunning {
 
     /// Recursively kills a process and all its descendants with SIGKILL
     private nonisolated static func killProcessTree(rootPid: Int32) {
-        print("[Cancel] Starting kill of process tree for root PID: \(rootPid)")
 
         // First, find all descendant PIDs
         var allPids: [Int32] = []
         findDescendants(of: rootPid, into: &allPids)
 
-        print("[Cancel] Found \(allPids.count) descendant(s): \(allPids)")
 
         // Kill descendants first (children before parent ensures orphans don't escape)
         for pid in allPids.reversed() {
-            let result = kill(pid, SIGKILL)
-            print("[Cancel] Killed descendant PID \(pid), result: \(result == 0 ? "success" : "failed (errno: \(errno))")")
+            kill(pid, SIGKILL)
         }
 
         // Finally kill the root process
-        let result = kill(rootPid, SIGKILL)
-        print("[Cancel] Killed root PID \(rootPid), result: \(result == 0 ? "success" : "failed (errno: \(errno))")")
-        print("[Cancel] Process tree kill completed")
+        kill(rootPid, SIGKILL)
     }
 
     /// Recursively finds all descendant process IDs of a given parent
     private nonisolated static func findDescendants(of parentPid: Int32, into pids: inout [Int32]) {
-        print("[Cancel] Finding children of PID \(parentPid)")
 
         let pgrep = Process()
         pgrep.executableURL = URL(fileURLWithPath: "/usr/bin/pgrep")
@@ -289,12 +253,10 @@ class GalleryDLRunner: DownloadRunning {
 
         let data = pipe.fileHandleForReading.readDataToEndOfFile()
         guard let output = String(data: data, encoding: .utf8), !output.isEmpty else {
-            print("[Cancel] No children found for PID \(parentPid)")
             return
         }
 
         let childPids = output.split(separator: "\n").compactMap { Int32($0.trimmingCharacters(in: .whitespaces)) }
-        print("[Cancel] PID \(parentPid) has children: \(childPids)")
 
         for childPid in childPids {
             pids.append(childPid)
@@ -333,7 +295,7 @@ class GalleryDLRunner: DownloadRunning {
         return .info
     }
 
-    private func handle(line: String, isLog: Bool, uiState: UIState, historyManager: HistoryManaging) {
+    private func handle(line: String, isLog: Bool, uiState: UIState, historyManager: HistoryManager) {
         uiState.lastActivityTime = Date()
         let trimmedLine = stripANSI(line).trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmedLine.isEmpty else { return }
