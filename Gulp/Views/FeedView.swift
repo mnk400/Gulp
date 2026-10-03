@@ -316,7 +316,8 @@ struct FeedView: View {
         .frame(height: 38)
     }
 
-    /// Four preferences and two links, which is all the old Settings scene held.
+    /// Three preferences, gallery-dl's status, and About. The destination lives
+    /// in the footer, so it isn't repeated here.
     private var settingsPopover: some View {
         @Bindable var settings = settings
         let isInstalled = GalleryDLRunner.findExecutable() != nil
@@ -330,24 +331,6 @@ struct FeedView: View {
                 settingToggle("Notify when finished", $settings.showNotifications)
             }
             .padding(.horizontal, 7)
-
-            popoverDivider
-
-            popoverHeader("Save to")
-
-            Button(action: chooseDestination) {
-                HStack(spacing: 7) {
-                    Image(systemName: "folder.fill")
-                        .foregroundStyle(Color.accentColor)
-                    Text(displayPath)
-                        .lineLimit(1)
-                        .truncationMode(.middle)
-                    Spacer(minLength: 8)
-                    Text("Change…")
-                        .foregroundStyle(.secondary)
-                }
-            }
-            .buttonStyle(HoverHighlightButtonStyle(fillsWidth: true))
 
             popoverDivider
 
