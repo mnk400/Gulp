@@ -602,9 +602,9 @@ struct FeedView: View {
         }
     }
 
+    /// Starts the run's own link, leaving whatever is typed in the field alone.
     private func retry(_ run: DownloadRun) {
-        uiState.url = run.url
-        startDownload()
+        start(run.url)
     }
 
     /// Only offers something that is unambiguously a link — an explicit http(s)
@@ -625,19 +625,26 @@ struct FeedView: View {
         clipboardSuggestion = raw
     }
 
+    /// Return in the field: the typed link, or the clipboard's when the field is empty.
     private func startDownload() {
-        // An empty field accepts the clipboard suggestion the placeholder offered.
-        if uiState.url.isEmpty, let suggestion = clipboardSuggestion {
-            uiState.url = suggestion
+        // Copied text often carries a stray space, which sends gallery-dl to the
+        // wrong extractor.
+        let typed = uiState.url.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let url = typed.isEmpty ? clipboardSuggestion : typed else { return }
+        if start(url) {
+            uiState.url = ""
+            clipboardSuggestion = nil
         }
-        guard !uiState.url.isEmpty else { return }
+    }
 
+    /// Returns false when the download can't start, so a typed link stays put.
+    @discardableResult
+    private func start(_ url: String) -> Bool {
         // The runner drives one process at a time: a second run would take over
-        // the first one's counters and leave it orphaned and unstoppable. The
-        // link stays in the field to start once this one is done.
+        // the first one's counters and leave it orphaned and unstoppable.
         guard !uiState.isDownloading else {
             NSSound.beep()
-            return
+            return false
         }
 
         do {
@@ -645,27 +652,18 @@ struct FeedView: View {
         } catch {
             errorMessage = error.localizedDescription
             showError = true
-            return
+            return false
         }
-
-        let url = uiState.url
-        uiState.url = ""
-        clipboardSuggestion = nil
 
         Task {
-            do {
-                try await runner.run(url: url,
-                                     outputDir: settings.outputDirectory,
-                                     uiState: uiState,
-                                     settings: settings,
-                                     historyManager: historyManager)
-            } catch GalleryDLError.cancelled {
-                // Cancelling is not an error; the row already says so.
-            } catch {
-                // The failed row carries the detail, so the alert stays quiet.
-                errorMessage = error.localizedDescription
-            }
+            // Failures and cancellations are reported on the run's own row.
+            try? await runner.run(url: url,
+                                  outputDir: settings.outputDirectory,
+                                  uiState: uiState,
+                                  settings: settings,
+                                  historyManager: historyManager)
         }
+        return true
     }
 
     private func updateStallMessage() {
