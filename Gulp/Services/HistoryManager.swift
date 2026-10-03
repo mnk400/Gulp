@@ -42,6 +42,8 @@ class HistoryManager: HistoryManaging {
 
     init() {
         load()
+        // Only one Gulp runs at a time, so nothing loaded can still be going.
+        settleInterruptedRuns()
     }
 
     // MARK: - CRUD Operations
@@ -66,6 +68,19 @@ class HistoryManager: HistoryManaging {
 
     func clearHistory() {
         runs.removeAll()
+        save()
+    }
+
+    /// A run still marked in progress when nothing is running was cut off by a
+    /// quit or a crash. Its count is only stored when it finishes, so it's
+    /// recovered from the logs, which are saved as files land.
+    func settleInterruptedRuns() {
+        guard runs.contains(where: { $0.status == .inProgress }) else { return }
+        for index in runs.indices where runs[index].status == .inProgress {
+            runs[index].status = .cancelled
+            runs[index].fileCount = runs[index].logs.count { $0.type == .download || $0.type == .skip }
+            runs[index].addLog("Stopped when Gulp quit", type: .warning)
+        }
         save()
     }
 

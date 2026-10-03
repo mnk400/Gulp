@@ -208,6 +208,16 @@ class GalleryDLRunner: DownloadRunning {
 
     private var isCancelling = false
 
+    var isRunning: Bool { currentProcess?.isRunning == true }
+
+    /// Stops the download before returning, for quitting, where there's no time
+    /// left for the termination handler to record the run.
+    func stopNow() {
+        guard let process = currentProcess, process.isRunning else { return }
+        isCancelling = true
+        Self.killProcessTree(rootPid: process.processIdentifier)
+    }
+
     func cancel() {
         guard let process = currentProcess, process.isRunning else {
             print("[Cancel] No running process to cancel")
