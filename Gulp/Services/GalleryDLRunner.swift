@@ -48,10 +48,9 @@ class GalleryDLRunner {
         return nil
     }
 
-    /// Everything that can stop a download before it has a row to report on, so
-    /// the caller can check it while the link is still in the field.
-    @discardableResult
-    static func preflight(outputDir: URL) throws -> String {
+    /// Everything that can stop a download before it has a row to report on.
+    /// Checked before the run is created, so a failure leaves the link in the field.
+    private static func preflight(outputDir: URL) throws -> String {
         guard let path = findExecutable() else { throw GalleryDLError.notInstalled }
         do {
             try FileManager.default.createDirectory(at: outputDir, withIntermediateDirectories: true)
