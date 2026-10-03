@@ -109,38 +109,68 @@ struct DownloadRun: Identifiable, Codable {
         logs.lazy.filter { $0.type == .skip }.count
     }
 
+    /// Files gallery-dl tried and gave up on. Each gets its own
+    /// `[download] Failed to download …` line, which is how a run that saved 70
+    /// of 71 files is told apart from one that never got started.
+    var failedFileCount: Int {
+        logs.count { $0.type == .error && Self.withoutTags($0.message).hasPrefix("Failed to download") }
+    }
+
     /// One readable line explaining a failure. gallery-dl's own error lines carry
-    /// `[extractor][error]` prefixes that say nothing to the reader, and the runner's
+    /// `[extractor]` prefixes that say nothing to the reader, and the runner's
     /// fallback only has an exit code, which gallery-dl defines as a bitmask.
     var failureSummary: String {
-        guard let message = logs.last(where: { $0.type == .error })?.message else {
+        guard let errorIndex = logs.lastIndex(where: { $0.type == .error }) else {
             return "Download failed"
         }
+        let message = logs[errorIndex].message
 
         let exitPrefix = "Download failed with exit code "
         if message.hasPrefix(exitPrefix), let code = Int(message.dropFirst(exitPrefix.count)) {
             return Self.describe(exitCode: code)
         }
 
+        let text = Self.withoutTags(message)
+        if let status = Self.httpStatus(in: text) { return Self.describe(status: status) }
+
+        // This line names only the file. The reason is the downloader's warning
+        // logged just before it.
+        if text.hasPrefix("Failed to download") {
+            let reason = logs[..<errorIndex].reversed().lazy
+                .compactMap { Self.httpStatus(in: Self.withoutTags($0.message)) }
+                .first
+            if let reason { return Self.describe(status: reason) }
+            let failed = failedFileCount
+            return failed == 1 ? "A file couldn't be downloaded" : "\(failed) files couldn't be downloaded"
+        }
+        return text.isEmpty ? message : String(text)
+    }
+
+    private static func withoutTags(_ message: String) -> Substring {
         var text = Substring(message)
         while text.hasPrefix("["), let close = text.firstIndex(of: "]") {
             text = text[text.index(after: close)...].drop(while: \.isWhitespace)
         }
-        if let http = Self.describe(httpError: text) { return http }
-        return text.isEmpty ? message : String(text)
+        return text
     }
 
-    /// gallery-dl reports HTTP failures as `HttpError: '403 Forbidden' for 'https://…'`.
-    /// The status is the useful part; the API URL after it means nothing to the reader.
-    private static func describe(httpError text: Substring) -> String? {
-        guard text.hasPrefix("HttpError: '"),
-              let status = text.dropFirst("HttpError: '".count).split(separator: "'").first,
-              let code = Int(status.prefix(3)) else { return nil }
-        switch code {
+    /// The quoted status in gallery-dl's HTTP lines: `HttpError: '403 Forbidden' for '…'`
+    /// from extractors, and `'400 Bad Request' for '…'` from the downloader. The
+    /// URL after it means nothing to the reader.
+    private static func httpStatus(in text: Substring) -> Substring? {
+        let quoted = text.hasPrefix("HttpError: ") ? text.dropFirst("HttpError: ".count) : text
+        guard quoted.hasPrefix("'"),
+              let status = quoted.dropFirst().split(separator: "'", maxSplits: 1).first,
+              status.prefix(3).allSatisfy(\.isNumber) else { return nil }
+        return status
+    }
+
+    private static func describe(status: Substring) -> String {
+        switch Int(status.prefix(3)) {
         case 401, 403: return "\(status) — this site may need you to log in"
         case 404, 410: return "\(status) — the page may have been removed"
         case 429: return "\(status) — too many requests, try again later"
-        default: return "\(status) from the site"
+        default: return String(status)
         }
     }
 

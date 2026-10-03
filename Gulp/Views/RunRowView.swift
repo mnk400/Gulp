@@ -155,9 +155,7 @@ struct RunRowView: View {
     @ViewBuilder
     private var trailing: some View {
         if isFailed {
-            Text("Failed")
-                .font(.system(size: 12, weight: .medium))
-                .foregroundStyle(tint(.red))
+            failedTrailing
         } else if let live {
             HStack(spacing: 8) {
                 if live.totalCount > 0 {
@@ -175,12 +173,31 @@ struct RunRowView: View {
                 .help("Stop download (⌘.)")
                 .accessibilityLabel("Stop download")
             }
-        } else if run.status == .cancelled && run.fileCount == 0 {
-            Text("Cancelled")
+        } else if run.fileCount == 0 {
+            // gallery-dl can finish cleanly having found nothing to save.
+            Text(run.status == .cancelled ? "Cancelled" : "Nothing found")
                 .font(.system(size: 12))
                 .foregroundStyle(meta)
         } else {
             counts(run.fileCount, size: run.sizeText)
+        }
+    }
+
+    /// gallery-dl fails a whole run over a single file, so a failure that still
+    /// saved most of a gallery leads with what landed.
+    @ViewBuilder
+    private var failedTrailing: some View {
+        let failed = run.failedFileCount
+        let label = failed > 0 ? "\(failed) failed" : "Failed"
+        if run.fileCount > 0 {
+            Text("\(fileLabel(run.fileCount)) · \(Text(label).foregroundStyle(tint(.red)).fontWeight(.medium))")
+                .font(.system(size: 12))
+                .monospacedDigit()
+                .foregroundStyle(numbers)
+        } else {
+            Text("Failed")
+                .font(.system(size: 12, weight: .medium))
+                .foregroundStyle(tint(.red))
         }
     }
 
