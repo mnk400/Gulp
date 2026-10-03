@@ -39,6 +39,9 @@ struct FeedView: View {
     // and spans ~59pt; the 20pt gap after it has to be clearly wider than the gaps
     // inside it, or whatever comes next reads as a fourth light.
     private let lightsInset: CGFloat = 105
+    /// Full screen hides the traffic lights, so the field moves out to the
+    /// favicon column instead of leaving their gap empty.
+    @State private var isFullScreen = false
 
     var body: some View {
         @Bindable var uiState = uiState
@@ -78,6 +81,12 @@ struct FeedView: View {
         // arrives — a click here does what ↑ from the top row already does.
         .onChange(of: focus) { _, focus in
             if focus == .field { selection = nil }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: NSWindow.willEnterFullScreenNotification)) { _ in
+            isFullScreen = true
+        }
+        .onReceive(NotificationCenter.default.publisher(for: NSWindow.willExitFullScreenNotification)) { _ in
+            isFullScreen = false
         }
         .onChange(of: uiState.isDownloading) { _, isDownloading in
             if !isDownloading { stallMessage = nil }
@@ -125,7 +134,7 @@ struct FeedView: View {
             }
         }
         .animation(.snappy(duration: 0.2), value: uiState.url.isEmpty)
-        .padding(.leading, lightsInset)
+        .padding(.leading, isFullScreen ? 19 : lightsInset)
         .padding(.trailing, 20)
         .frame(height: 64)
     }
