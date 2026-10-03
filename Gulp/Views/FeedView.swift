@@ -680,8 +680,10 @@ struct FeedView: View {
             return
         }
         let elapsed = Int(Date().timeIntervalSince(last))
+        // gallery-dl says nothing while a single file downloads, so a long silence
+        // is as likely a big video as a slow server.
         if elapsed > 30 {
-            stallMessage = "waiting \(elapsed)s — the server may be throttling"
+            stallMessage = "waiting \(elapsed)s — a large file or a slow site"
         } else if elapsed > 10 {
             stallMessage = "waiting \(elapsed)s"
         } else {
