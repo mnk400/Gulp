@@ -59,17 +59,22 @@ class GalleryDLRunner: DownloadRunning {
         return nil
     }
 
-    func run(url: String, outputDir: URL, uiState: UIState, settings: UserSettings, historyManager: HistoryManaging) async throws {
-        guard let executablePath = Self.findExecutable() else {
-            throw GalleryDLError.notInstalled
-        }
-
-        ConfigManager.ensureConfigExists()
-
-        // Ensure output directory exists
-        if !FileManager.default.fileExists(atPath: outputDir.path) {
+    /// Everything that can stop a download before it has a row to report on, so
+    /// the caller can check it while the link is still in the field.
+    @discardableResult
+    static func preflight(outputDir: URL) throws -> String {
+        guard let path = findExecutable() else { throw GalleryDLError.notInstalled }
+        do {
             try FileManager.default.createDirectory(at: outputDir, withIntermediateDirectories: true)
+        } catch {
+            throw GalleryDLError.processError("Gulp can't use the download folder. \(error.localizedDescription)")
         }
+        return path
+    }
+
+    func run(url: String, outputDir: URL, uiState: UIState, settings: UserSettings, historyManager: HistoryManaging) async throws {
+        let executablePath = try Self.preflight(outputDir: outputDir)
+        ConfigManager.ensureConfigExists()
 
         // Create a new run entry
         var run = DownloadRun(url: url, outputDirectory: outputDir.path)

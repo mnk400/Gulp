@@ -640,6 +640,14 @@ struct FeedView: View {
             return
         }
 
+        do {
+            try GalleryDLRunner.preflight(outputDir: settings.outputDirectory)
+        } catch {
+            errorMessage = error.localizedDescription
+            showError = true
+            return
+        }
+
         let url = uiState.url
         uiState.url = ""
         clipboardSuggestion = nil
