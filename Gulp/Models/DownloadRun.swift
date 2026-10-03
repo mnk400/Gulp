@@ -200,15 +200,6 @@ struct DownloadRun: Identifiable, Codable {
         return ByteCountFormatter.string(fromByteCount: totalBytes, countStyle: .file)
     }
 
-    var statusColor: String {
-        switch status {
-        case .inProgress: return "yellow"
-        case .completed: return "green"
-        case .failed: return "red"
-        case .cancelled: return "gray"
-        }
-    }
-
     /// Every file the run saved or found already saved, in the order gallery-dl
     /// reported them. Skips are logged as gallery-dl prints them, `# /path`.
     var filePaths: [String] {

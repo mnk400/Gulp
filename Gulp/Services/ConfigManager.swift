@@ -68,22 +68,4 @@ struct ConfigManager {
         ensureConfigExists()
         NSWorkspace.shared.open(configURL)
     }
-
-    static func updateBaseDirectory(_ path: String) {
-        ensureConfigExists()
-
-        do {
-            let data = try Data(contentsOf: configURL)
-            guard var config = try JSONSerialization.jsonObject(with: data) as? [String: Any] else { return }
-
-            var extractor = config["extractor"] as? [String: Any] ?? [:]
-            extractor["base-directory"] = path
-            config["extractor"] = extractor
-
-            let updatedData = try JSONSerialization.data(withJSONObject: config, options: [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes])
-            try updatedData.write(to: configURL)
-        } catch {
-            print("Failed to update config: \(error)")
-        }
-    }
 }
