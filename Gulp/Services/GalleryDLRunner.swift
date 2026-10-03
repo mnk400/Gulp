@@ -90,10 +90,10 @@ class GalleryDLRunner: DownloadRunning {
             "--destination", outputDir.path
         ]
 
-        // Add options based on settings
-        if settings.skipExisting {
+        // Skipping files already on disk is gallery-dl's default, so only turning
+        // it off needs a flag. (`--no-skip` also disables any download archive.)
+        if !settings.skipExisting {
             arguments.append("--no-skip")
-            arguments.append(contentsOf: ["--download-archive", outputDir.appendingPathComponent(".gallery-dl-archive").path])
         }
 
         if settings.saveMetadata {
