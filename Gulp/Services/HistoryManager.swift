@@ -35,6 +35,7 @@ private struct HistoryFile: Codable {
 class HistoryManager: HistoryManaging {
     private(set) var runs: [DownloadRun] = []
     private let maxEntries = 100
+    @ObservationIgnored private var pendingSave: Task<Void, Never>?
 
     static let historyURL = FileManager.default
         .urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
@@ -54,11 +55,22 @@ class HistoryManager: HistoryManaging {
         save()
     }
 
+    /// Called for every line gallery-dl prints. Rewriting the whole history each
+    /// time made long runs stutter, so these are written at most once a second.
     func updateRun(_ run: DownloadRun) {
-        if let index = runs.firstIndex(where: { $0.id == run.id }) {
-            runs[index] = run
-            save()
+        guard let index = runs.firstIndex(where: { $0.id == run.id }) else { return }
+        runs[index] = run
+        guard pendingSave == nil else { return }
+        pendingSave = Task { [weak self] in
+            try? await Task.sleep(for: .seconds(1))
+            guard !Task.isCancelled else { return }
+            self?.save()
         }
+    }
+
+    /// Writes any update still waiting on the once-a-second save.
+    func flush() {
+        if pendingSave != nil { save() }
     }
 
     func deleteRun(_ run: DownloadRun) {
@@ -87,6 +99,8 @@ class HistoryManager: HistoryManaging {
     // MARK: - Persistence
 
     private func save() {
+        pendingSave?.cancel()
+        pendingSave = nil
         do {
             let directory = Self.historyURL.deletingLastPathComponent()
             if !FileManager.default.fileExists(atPath: directory.path) {
@@ -95,7 +109,8 @@ class HistoryManager: HistoryManaging {
 
             let historyFile = HistoryFile(runs: runs)
             let data = try JSONEncoder().encode(historyFile)
-            try data.write(to: Self.historyURL)
+            // Atomic, so a crash mid-write leaves the previous file rather than half of one.
+            try data.write(to: Self.historyURL, options: .atomic)
         } catch {
             print("Failed to save history: \(error)")
         }
@@ -116,7 +131,12 @@ class HistoryManager: HistoryManaging {
                 save() // Re-save in new versioned format
             }
         } catch {
+            // Starting empty would overwrite the file on the next save. Set it
+            // aside instead, so the history can still be recovered by hand.
             print("Failed to load history: \(error)")
+            let unreadable = Self.historyURL.deletingPathExtension()
+                .appendingPathExtension("unreadable-\(Int(Date().timeIntervalSince1970)).json")
+            try? FileManager.default.moveItem(at: Self.historyURL, to: unreadable)
             runs = []
         }
     }

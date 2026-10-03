@@ -51,6 +51,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         return .terminateLater
     }
 
+    func applicationWillTerminate(_ notification: Notification) {
+        historyManager.flush()
+    }
+
     private func stopForQuit() {
         runner.stopNow()
         historyManager.settleInterruptedRuns()
