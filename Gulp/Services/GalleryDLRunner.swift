@@ -40,8 +40,8 @@ protocol DownloadRunning {
 @Observable
 class GalleryDLRunner: DownloadRunning {
     private var currentProcess: Process?
-    private var pipes: [Pipe] = []
-    private var readTasks: [Task<Void, any Error>] = []
+    private var readers: [PipeLines] = []
+    private var readTasks: [Task<Void, Never>] = []
     private var currentRun: DownloadRun?
 
     static let possiblePaths = [
@@ -120,14 +120,13 @@ class GalleryDLRunner: DownloadRunning {
         process.standardInput = FileHandle.nullDevice
 
         self.currentProcess = process
-        self.pipes = [stdout, stderr]
+        readers = [PipeLines(stdout), PipeLines(stderr)]
 
         // Stored so the termination handler can wait for every line before settling the run.
-        readTasks = [(stdout, false), (stderr, true)].map { pipe, isLog in
-            let handle = pipe.fileHandleForReading
-            return Task.detached { [weak self] in
-                for try await line in handle.bytes.lines {
-                    await self?.handle(line: line, isLog: isLog, uiState: uiState, historyManager: historyManager)
+        readTasks = zip(readers, [false, true]).map { reader, isLog in
+            Task { [weak self] in
+                for await line in reader.lines {
+                    self?.handle(line: line, isLog: isLog, uiState: uiState, historyManager: historyManager)
                 }
             }
         }
@@ -136,14 +135,14 @@ class GalleryDLRunner: DownloadRunning {
             process.terminationHandler = { [weak self] proc in
                 Task { @MainActor in
                     // Wait for the readers to drain all output before processing results.
-                    // On cancel, the pipes' read ends are closed, which unblocks this.
+                    // On cancel, the readers are abandoned, which unblocks this.
                     for task in self?.readTasks ?? [] {
-                        _ = try? await task.value
+                        await task.value
                     }
                     self?.readTasks = []
+                    self?.readers = []
 
                     self?.currentProcess = nil
-                    self?.pipes = []
                     uiState.isDownloading = false
 
                     // Update run status
@@ -206,9 +205,8 @@ class GalleryDLRunner: DownloadRunning {
                 // Close the parent's copy of the write end — only the child needs it.
                 // Without this, the pipe reader won't get EOF when the child exits
                 // because the parent still holds the write end open.
-                for pipe in self.pipes {
-                    pipe.fileHandleForWriting.closeFile()
-                }
+                stdout.fileHandleForWriting.closeFile()
+                stderr.fileHandleForWriting.closeFile()
                 uiState.lastActivityTime = Date()
             } catch {
                 uiState.isDownloading = false
@@ -244,16 +242,9 @@ class GalleryDLRunner: DownloadRunning {
         print("[Cancel] Cancel requested for PID: \(pid)")
 
         isCancelling = true
-        readTasks.forEach { $0.cancel() }
-
-        // Close the pipe to ensure the reader gets EOF after the process is killed.
-        // The write end may already be closed (after process.run()), but closeFile is
-        // idempotent. Closing the read end breaks any blocked read() syscall.
-        for pipe in pipes {
-            pipe.fileHandleForWriting.closeFile()
-            pipe.fileHandleForReading.closeFile()
-        }
-        print("[Cancel] Pipes closed")
+        // A grandchild that escapes the kill could hold the pipes open forever, so
+        // the run settles without waiting for their end.
+        readers.forEach { $0.abandon() }
 
         // Force kill the entire process tree spawned by this app
         Task.detached {
@@ -397,5 +388,46 @@ class GalleryDLRunner: DownloadRunning {
 
         let request = UNNotificationRequest(identifier: UUID().uuidString, content: content, trigger: nil)
         UNUserNotificationCenter.current().add(request)
+    }
+}
+
+/// A pipe's output, a line at a time, as it arrives. `FileHandle.bytes` was
+/// simpler, but with one reading each of gallery-dl's two pipes, a quiet stderr
+/// held stdout's lines back until the run ended.
+nonisolated final class PipeLines: @unchecked Sendable {
+    let lines: AsyncStream<String>
+    private let continuation: AsyncStream<String>.Continuation
+    private let handle: FileHandle
+    /// Only touched from the handle's own serial readability callbacks.
+    private var buffer = Data()
+
+    init(_ pipe: Pipe) {
+        (lines, continuation) = AsyncStream.makeStream()
+        handle = pipe.fileHandleForReading
+        handle.readabilityHandler = { [unowned self] handle in
+            receive(handle.availableData)
+        }
+    }
+
+    private func receive(_ data: Data) {
+        guard !data.isEmpty else {
+            // End of file: whatever is left was the last line, unterminated.
+            if !buffer.isEmpty {
+                continuation.yield(String(decoding: buffer, as: UTF8.self))
+            }
+            abandon()
+            return
+        }
+        buffer.append(data)
+        while let newline = buffer.firstIndex(of: UInt8(ascii: "\n")) {
+            continuation.yield(String(decoding: buffer[..<newline], as: UTF8.self))
+            buffer.removeSubrange(...newline)
+        }
+    }
+
+    /// Ends the lines now, without waiting for the pipe to close.
+    func abandon() {
+        handle.readabilityHandler = nil
+        continuation.finish()
     }
 }
