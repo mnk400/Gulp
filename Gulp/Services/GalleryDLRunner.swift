@@ -40,8 +40,8 @@ protocol DownloadRunning {
 @Observable
 class GalleryDLRunner: DownloadRunning {
     private var currentProcess: Process?
-    private var outputPipe: Pipe?
-    private var readTask: Task<Void, any Error>?
+    private var pipes: [Pipe] = []
+    private var readTasks: [Task<Void, any Error>] = []
     private var currentRun: DownloadRun?
 
     static let possiblePaths = [
@@ -111,34 +111,39 @@ class GalleryDLRunner: DownloadRunning {
 
         process.qualityOfService = .userInitiated
 
-        let pipe = Pipe()
-        process.standardOutput = pipe
-        process.standardError = pipe
+        // gallery-dl prints file paths to stdout and log messages to stderr, so
+        // reading them apart says which is which without guessing from the text.
+        let stdout = Pipe()
+        let stderr = Pipe()
+        process.standardOutput = stdout
+        process.standardError = stderr
         process.standardInput = FileHandle.nullDevice
 
         self.currentProcess = process
-        self.outputPipe = pipe
+        self.pipes = [stdout, stderr]
 
-        // Handle output asynchronously
-        let handle = pipe.fileHandleForReading
-
-        // Read output in background — store the task so we can await it before processing results
-        readTask = Task.detached { [weak self] in
-            for try await line in handle.bytes.lines {
-                await self?.parseOutput(line: line, uiState: uiState, historyManager: historyManager)
+        // Stored so the termination handler can wait for every line before settling the run.
+        readTasks = [(stdout, false), (stderr, true)].map { pipe, isLog in
+            let handle = pipe.fileHandleForReading
+            return Task.detached { [weak self] in
+                for try await line in handle.bytes.lines {
+                    await self?.handle(line: line, isLog: isLog, uiState: uiState, historyManager: historyManager)
+                }
             }
         }
 
         return try await withCheckedThrowingContinuation { continuation in
             process.terminationHandler = { [weak self] proc in
                 Task { @MainActor in
-                    // Wait for pipe reader to drain all output before processing results.
-                    // On cancel, the pipe's read end is closed which unblocks this.
-                    _ = try? await self?.readTask?.value
-                    self?.readTask = nil
+                    // Wait for the readers to drain all output before processing results.
+                    // On cancel, the pipes' read ends are closed, which unblocks this.
+                    for task in self?.readTasks ?? [] {
+                        _ = try? await task.value
+                    }
+                    self?.readTasks = []
 
                     self?.currentProcess = nil
-                    self?.outputPipe = nil
+                    self?.pipes = []
                     uiState.isDownloading = false
 
                     // Update run status
@@ -174,8 +179,12 @@ class GalleryDLRunner: DownloadRunning {
                             continuation.resume()
                         } else {
                             run.status = .failed
+                            // gallery-dl's own error is already in the log; the exit
+                            // code is only worth recording when it said nothing.
                             let error = uiState.errorMessage ?? "Download failed with exit code \(proc.terminationStatus)"
-                            run.addLog(error, type: .error)
+                            if uiState.errorMessage == nil {
+                                run.addLog(error, type: .error)
+                            }
                             historyManager.updateRun(run)
                             continuation.resume(throwing: GalleryDLError.processError(error))
                         }
@@ -197,7 +206,9 @@ class GalleryDLRunner: DownloadRunning {
                 // Close the parent's copy of the write end — only the child needs it.
                 // Without this, the pipe reader won't get EOF when the child exits
                 // because the parent still holds the write end open.
-                pipe.fileHandleForWriting.closeFile()
+                for pipe in self.pipes {
+                    pipe.fileHandleForWriting.closeFile()
+                }
                 uiState.lastActivityTime = Date()
             } catch {
                 uiState.isDownloading = false
@@ -233,13 +244,15 @@ class GalleryDLRunner: DownloadRunning {
         print("[Cancel] Cancel requested for PID: \(pid)")
 
         isCancelling = true
-        readTask?.cancel()
+        readTasks.forEach { $0.cancel() }
 
         // Close the pipe to ensure the reader gets EOF after the process is killed.
         // The write end may already be closed (after process.run()), but closeFile is
         // idempotent. Closing the read end breaks any blocked read() syscall.
-        outputPipe?.fileHandleForWriting.closeFile()
-        outputPipe?.fileHandleForReading.closeFile()
+        for pipe in pipes {
+            pipe.fileHandleForWriting.closeFile()
+            pipe.fileHandleForReading.closeFile()
+        }
         print("[Cancel] Pipes closed")
 
         // Force kill the entire process tree spawned by this app
@@ -308,68 +321,71 @@ class GalleryDLRunner: DownloadRunning {
         )
     }
 
-    private func parseOutput(line: String, uiState: UIState, historyManager: HistoryManaging) async {
-        await MainActor.run {
-            uiState.lastActivityTime = Date()
-            let cleanedLine = stripANSI(line)
-            let trimmedLine = cleanedLine.trimmingCharacters(in: .whitespacesAndNewlines)
-            guard !trimmedLine.isEmpty else { return }
+    /// What a line of gallery-dl's output is. On stdout that's a file it saved
+    /// (`/path`) or skipped (`# /path`). On stderr the severity is only in the
+    /// line's colour: piped output drops the `[error]` tag a terminal shows, so
+    /// the text alone can't tell a failed download from an info message. The
+    /// tag is still checked in case colour is off.
+    nonisolated static func classify(_ raw: String, isLog: Bool) -> LogType {
+        guard isLog else {
+            if raw.hasPrefix("# ") { return .skip }
+            return raw.hasPrefix("/") ? .download : .info
+        }
+        if raw.hasPrefix("\u{1B}["), let end = raw.firstIndex(of: "m") {
+            let codes = raw[raw.index(raw.startIndex, offsetBy: 2)..<end].split(separator: ";")
+            if codes.contains("31") { return .error }
+            if codes.contains("33") { return .warning }
+        }
+        let lower = raw.lowercased()
+        if lower.contains("][error]") { return .error }
+        if lower.contains("][warning]") { return .warning }
+        return .info
+    }
 
-            // Classify the line type:
-            // - Starts with "/" → downloaded file path (stdout in PipeOutput mode)
-            // - Starts with "# /" → skipped file path
-            // - Starts with "[" and contains error → error from extractor (stderr)
-            // - Starts with "[" and contains warning → warning from extractor
-            // - Everything else → info
-            let logType: LogType = {
-                if trimmedLine.hasPrefix("/") { return .download }
-                if trimmedLine.hasPrefix("# /") { return .skip }
-                let lower = trimmedLine.lowercased()
-                if trimmedLine.hasPrefix("[") {
-                    if lower.contains("error") { return .error }
-                    if lower.contains("warning") { return .warning }
-                }
-                return .info
-            }()
+    private func handle(line: String, isLog: Bool, uiState: UIState, historyManager: HistoryManaging) {
+        uiState.lastActivityTime = Date()
+        let trimmedLine = stripANSI(line).trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedLine.isEmpty else { return }
+        // Log lines keep their colour for classifying; it carries the severity.
+        let logType = Self.classify(isLog ? line : trimmedLine, isLog: isLog)
 
-            // gallery-dl doesn't report file sizes, so measure what just landed on disk.
-            var addedBytes: Int64 = 0
-            if logType == .download {
-                let attributes = try? FileManager.default.attributesOfItem(atPath: trimmedLine)
-                addedBytes = (attributes?[.size] as? NSNumber)?.int64Value ?? 0
+        // gallery-dl doesn't report file sizes, so measure what just landed on disk.
+        var addedBytes: Int64 = 0
+        if logType == .download {
+            let attributes = try? FileManager.default.attributesOfItem(atPath: trimmedLine)
+            addedBytes = (attributes?[.size] as? NSNumber)?.int64Value ?? 0
+        }
+
+        // Add to current run's logs
+        if var run = currentRun {
+            run.addLog(trimmedLine, type: logType)
+            if addedBytes > 0 {
+                run.totalBytes = (run.totalBytes ?? 0) + addedBytes
             }
+            currentRun = run
+            historyManager.updateRun(run)
+        }
 
-            // Add to current run's logs
-            if var run = currentRun {
-                run.addLog(trimmedLine, type: logType)
-                if addedBytes > 0 {
-                    run.totalBytes = (run.totalBytes ?? 0) + addedBytes
-                }
-                currentRun = run
-                historyManager.updateRun(run)
-            }
+        // Capture error messages — only for genuine errors, keep the first one
+        if logType == .error && uiState.errorMessage == nil {
+            uiState.errorMessage = trimmedLine
+        }
 
-            // Capture error messages — only for genuine errors, keep the first one
-            if logType == .error && uiState.errorMessage == nil {
-                uiState.errorMessage = trimmedLine
+        // Track downloaded files
+        if logType == .download {
+            let components = trimmedLine.components(separatedBy: "/")
+            if let filename = components.last, !filename.isEmpty {
+                uiState.currentFile = filename
             }
+            uiState.downloadedCount += 1
+            if addedBytes > 0 {
+                uiState.recordBytes(addedBytes)
+            }
+        }
 
-            // Track downloaded files
-            if logType == .download {
-                let components = trimmedLine.components(separatedBy: "/")
-                if let filename = components.last, !filename.isEmpty {
-                    uiState.currentFile = filename
-                }
-                uiState.downloadedCount += 1
-                if addedBytes > 0 {
-                    uiState.recordBytes(addedBytes)
-                }
-            }
-
-            // Track skipped files
-            if logType == .skip {
-                uiState.skippedCount += 1
-            }
+        // Track skipped files
+        if logType == .skip {
+            uiState.skippedCount += 1
         }
     }
 
